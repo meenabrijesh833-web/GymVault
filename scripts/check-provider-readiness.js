@@ -25,6 +25,68 @@ const requireValues = (names) => {
     }
 };
 
+const checkCoreRuntime = async () => {
+    const requiredNames = [
+        'NODE_VERSION',
+        'APP_URL',
+        'SERVER_URL',
+        'FRONTEND_URL',
+        'PUBLIC_FRONTEND_URL',
+        'CORS_ORIGIN',
+        'JWT_SECRET',
+        'APP_SECRET_ENC_KEY',
+        'TRUST_PROXY',
+        'DB_POOL_MAX',
+        'DB_POOL_MIN',
+    ];
+    const missing = requiredNames.filter((name) => !String(process.env[name] || '').trim());
+    const issues = missing.length > 0 ? [`missing ${missing.join(', ')}`] : [];
+
+    const jwtSecret = String(process.env.JWT_SECRET).trim();
+    const encryptionSecret = String(process.env.APP_SECRET_ENC_KEY).trim();
+    if (jwtSecret && jwtSecret.length < 32) issues.push('JWT_SECRET must be at least 32 characters');
+    if (encryptionSecret && encryptionSecret.length < 32) issues.push('APP_SECRET_ENC_KEY must be at least 32 characters');
+    if (jwtSecret && jwtSecret === encryptionSecret) issues.push('APP_SECRET_ENC_KEY must be different from JWT_SECRET');
+    if (process.env.NODE_VERSION && String(process.env.NODE_VERSION).trim() !== '20.18.0') issues.push('NODE_VERSION must be 20.18.0');
+    if (process.env.TRUST_PROXY && String(process.env.TRUST_PROXY).trim().toLowerCase() !== 'true') issues.push('TRUST_PROXY must be true on Render');
+
+    const parseUrl = (name) => {
+        try {
+            return process.env[name] ? new URL(String(process.env[name]).trim()) : null;
+        } catch (_error) {
+            issues.push(`${name} must be a valid URL`);
+            return null;
+        }
+    };
+    const appUrl = parseUrl('APP_URL');
+    const serverUrl = parseUrl('SERVER_URL');
+    const frontendUrl = parseUrl('FRONTEND_URL');
+    const publicFrontendUrl = parseUrl('PUBLIC_FRONTEND_URL');
+    const corsOrigin = parseUrl('CORS_ORIGIN');
+    const urls = [appUrl, serverUrl, frontendUrl, publicFrontendUrl, corsOrigin].filter(Boolean);
+    if (urls.some((url) => url.protocol !== 'https:')) issues.push('production URLs must use HTTPS');
+    if (appUrl && serverUrl && appUrl.origin !== serverUrl.origin) issues.push('APP_URL and SERVER_URL must use the same backend origin');
+    if (frontendUrl && publicFrontendUrl && corsOrigin
+        && (frontendUrl.origin !== publicFrontendUrl.origin || frontendUrl.origin !== corsOrigin.origin)) {
+        issues.push('FRONTEND_URL, PUBLIC_FRONTEND_URL, and CORS_ORIGIN must use the same frontend origin');
+    }
+
+    const poolMax = Number.parseInt(process.env.DB_POOL_MAX, 10);
+    const poolMin = Number.parseInt(process.env.DB_POOL_MIN, 10);
+    if (process.env.DB_POOL_MAX && (!Number.isInteger(poolMax) || poolMax < 1 || poolMax > 25)) issues.push('DB_POOL_MAX must be between 1 and 25 on Render');
+    if (process.env.DB_POOL_MIN && (!Number.isInteger(poolMin) || poolMin < 1 || poolMin > poolMax)) issues.push('DB_POOL_MIN must be between 1 and DB_POOL_MAX');
+
+    if (issues.length > 0) throw new Error(issues.join('; '));
+
+    return `backend ${appUrl.origin}; frontend ${frontendUrl.origin}`;
+};
+
+const checkSuperadmin = async () => {
+    const password = String(process.env.MASTER_PASSWORD || process.env.SUPERADMIN_PASSWORD || '').trim();
+    if (password.length < 16) throw new Error('MASTER_PASSWORD is missing or shorter than 16 characters');
+    return 'master password configured';
+};
+
 const checkDatabase = async () => {
     const response = await pool.query('SELECT 1 AS ok');
     if (Number(response.rows[0]?.ok) !== 1) {
@@ -133,6 +195,8 @@ const checkMsg91Otp = async () => {
 };
 
 const main = async () => {
+    await run('Core production runtime', checkCoreRuntime);
+    await run('Superadmin access', checkSuperadmin, { optional: true });
     await run('Supabase PostgreSQL', checkDatabase);
     await run('Zoho SMTP', checkSmtp);
     await run('Google OAuth', checkGoogleOauth, { optional: true });
