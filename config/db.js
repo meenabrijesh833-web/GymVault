@@ -363,7 +363,19 @@ const connectDB = async () => {
         await pool.query('SELECT NOW()');
         console.log('✅ Database Connected!');
 
+        const isProduction = process.env.NODE_ENV === 'production';
+        const runInitOnBoot = String(process.env.RUN_DB_INIT_ON_BOOT || '').toLowerCase() === 'true';
+
         const runMaintenance = async () => {
+
+        if (!isProduction || runInitOnBoot) {
+            const sqlPath = path.join(__dirname, 'init.sql');
+            const sql = fs.readFileSync(sqlPath, 'utf8');
+            await pool.query(sql);
+            console.log('✅ Schema initialization completed from init.sql');
+        } else {
+            console.log('ℹ️ Skipping init.sql on boot (production mode). Set RUN_DB_INIT_ON_BOOT=true to enable.');
+        }
 
         // Always run idempotent column migrations (safe to run every boot)
         await pool.query(`
@@ -1098,18 +1110,6 @@ const connectDB = async () => {
                 ON broadcast_logs(gym_id, idempotency_key)
                 WHERE idempotency_key IS NOT NULL;
         `);
-
-        const isProduction = process.env.NODE_ENV === 'production';
-        const runInitOnBoot = String(process.env.RUN_DB_INIT_ON_BOOT || '').toLowerCase() === 'true';
-
-        if (!isProduction || runInitOnBoot) {
-            const sqlPath = path.join(__dirname, 'init.sql');
-            const sql = fs.readFileSync(sqlPath, 'utf8');
-            await pool.query(sql);
-            console.log('✅ Schema initialization completed from init.sql');
-        } else {
-            console.log('ℹ️ Skipping init.sql on boot (production mode). Set RUN_DB_INIT_ON_BOOT=true to enable.');
-        }
 
         await runSchemaMigrations();
         console.log('✅ Schema migrations checked');
