@@ -26,6 +26,26 @@
       "source": "/((?!api/|uploads/).*)",
       "headers": [
         {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://*.razorpay.com; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://appleid.cdn-apple.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.razorpay.com https://appleid.apple.com; frame-src https://*.razorpay.com https://control.msg91.com https://msg91.com; worker-src 'self' blob:; manifest-src 'self'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin-allow-popups"
+        },
+        {
           "key": "Permissions-Policy",
           "value": "accelerometer=(self \"https://api.razorpay.com\"), gyroscope=(self \"https://api.razorpay.com\"), magnetometer=(self \"https://api.razorpay.com\"), payment=(self \"https://api.razorpay.com\")"
         }
