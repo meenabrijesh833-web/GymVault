@@ -13,6 +13,7 @@
     "backup:db": "node scripts/backup-db.js",
     "smoke:backend": "node scripts/test-backend.js --runtime",
     "smoke:production": "node scripts/smoke-production.js",
+    "check:providers": "node scripts/check-provider-readiness.js",
     "rfid:simulate": "node scripts/rfid-bridge-simulator.js",
     "test": "node scripts/test-backend.js"
   },

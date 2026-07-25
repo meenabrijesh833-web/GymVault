@@ -1,5 +1,5 @@
 const DEFAULT_FRONTEND_URL = 'https://gymvault.tech';
-const DEFAULT_BACKEND_URL = 'https://gym-management-system-4nfu.onrender.com';
+const DEFAULT_BACKEND_URL = 'https://gymvault-earv.onrender.com';
 
 const normalizeBaseUrl = (value, fallback) => String(value || fallback || '').trim().replace(/\/+$/, '');
 
