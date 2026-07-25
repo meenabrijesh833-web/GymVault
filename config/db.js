@@ -8,6 +8,25 @@ const parsePositiveInt = (value, fallback) => {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const parseBoolean = (value, fallback = false) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return fallback;
+};
+
+const buildSslConfig = () => {
+    const sslEnabled = parseBoolean(process.env.DB_SSL, false);
+    if (!sslEnabled) {
+        return false;
+    }
+
+    return {
+        rejectUnauthorized: parseBoolean(process.env.DB_SSL_REJECT_UNAUTHORIZED, false),
+    };
+};
+
 const quoteIdentifier = (value) => `"${String(value || '').replace(/"/g, '""')}"`;
 
 const ensureSchemaMigrationsTable = async (client) => {
@@ -315,6 +334,7 @@ const runSchemaMigrations = async () => {
 };
 
 const isLoadTest = process.env.LOAD_TEST_MODE === 'true';
+const dbSslConfig = buildSslConfig();
 
 const pool = new Pool({
     user: process.env.DB_USER,
@@ -331,6 +351,7 @@ const pool = new Pool({
     keepAliveInitialDelayMillis: parsePositiveInt(process.env.DB_KEEPALIVE_INITIAL_DELAY_MS, 10000),
     allowExitOnIdle: false,
     application_name: process.env.DB_APPLICATION_NAME || 'gym-management-system',
+    ssl: dbSslConfig,
 });
 
 pool.on('error', (err) => {

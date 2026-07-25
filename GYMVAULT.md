@@ -864,6 +864,24 @@ GymVault is designed to be mostly self-maintaining:
 3. **SuperAdmin Panel** (`/hq-admin`) — Platform-wide gym health
 4. **Error Reports** — Client errors are logged to `/api/support/client-errors`
 
+### Smoke Checks
+Use these before and after any deployment or after a long inactivity gap:
+
+```bash
+# Safe live deployment check (read-only against production)
+npm run smoke:production
+
+# Optional: include owner-only read routes in the production smoke
+# Requires a valid owner JWT in SMOKE_OWNER_TOKEN
+SMOKE_OWNER_TOKEN=your_owner_jwt npm run smoke:production
+
+# Backend syntax and local runtime validation
+# Note: this can write to whichever database your local .env points to
+npm test
+```
+
+`npm run smoke:production` validates the public Vercel shell, Render API health, auth config, Google OAuth redirect behavior, service worker and manifest headers, invalid-login handling, and billing auth guards. If `SMOKE_OWNER_TOKEN` is set, it also performs read-only owner checks against dashboard, setup status, integrations, support, and billing config.
+
 ### When Things Go Wrong
 - **Server won't start** → Check Render logs, verify environment variables
 - **Database connection fails** → Check Supabase status, verify DB credentials
