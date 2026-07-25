@@ -392,6 +392,7 @@ const connectDB = async () => {
             ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_id VARCHAR(255);
             ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'local';
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id VARCHAR(60) DEFAULT 'branch-1';
         `);
         await pool.query(`
             CREATE TABLE IF NOT EXISTS password_reset_otps (

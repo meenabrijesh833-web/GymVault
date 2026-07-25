@@ -181,7 +181,16 @@ const getPasswordResetDeliveryMode = () => {
     return mode === 'email' && isEmailTransportConfigured() ? 'email' : 'preview';
 };
 
-const getSignupEmailOtpMode = () => (isEmailTransportConfigured() ? 'email' : 'preview');
+const getSignupEmailOtpMode = () => {
+    if (isEmailTransportConfigured()) return 'email';
+    return isProduction ? 'unavailable' : 'preview';
+};
+
+const requireEmailOtpTransport = (res) => {
+    if (!isProduction || isEmailTransportConfigured()) return true;
+    res.status(503).json({ message: 'Email delivery is temporarily unavailable. Please try again later.' });
+    return false;
+};
 
 const generatePasswordResetOtp = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 
@@ -775,6 +784,7 @@ const handleMemberSendOtp = async (req, res) => {
     if (!phone || phone.length !== 10) {
         return res.status(400).json({ message: 'Please enter a valid 10-digit phone number.' });
     }
+    if (!requireEmailOtpTransport(res)) return;
 
     try {
         const selection = await resolveMemberPortalSelection(phone, req.body?.member_id);
@@ -1180,6 +1190,7 @@ router.post('/signup/send-email-otp', async (req, res) => {
     if (!isValidEmailAddress(email)) {
         return res.status(400).json({ message: 'Please enter a valid email address.' });
     }
+    if (!requireEmailOtpTransport(res)) return;
 
     try {
         await cleanupExpiredEmailOtps();
@@ -1768,6 +1779,7 @@ router.post('/admin/send-email-otp', async (req, res) => {
     if (!isValidEmailAddress(email)) {
         return res.status(400).json({ message: 'Please enter the registered email address.' });
     }
+    if (!requireEmailOtpTransport(res)) return;
 
     try {
         await cleanupExpiredEmailOtps();
@@ -1965,6 +1977,7 @@ router.post('/password-reset/request', async (req, res) => {
     if (!isValidEmailAddress(email)) {
         return res.status(400).json({ message: 'Please enter a valid email address.' });
     }
+    if (!requireEmailOtpTransport(res)) return;
 
     try {
         await cleanupExpiredEmailOtps();
@@ -2192,11 +2205,12 @@ router.post('/password-reset/confirm', async (req, res) => {
 router.get('/config', async (_req, res) => {
     try {
         const billingConfig = await getBillingConfig();
+        const signupEmailOtpMode = getSignupEmailOtpMode();
         res.json({
             google_auth_enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
             apple_client_id: process.env.APPLE_CLIENT_ID || null,
-            signup_email_otp_enabled: true,
-            signup_email_otp_mode: getSignupEmailOtpMode(),
+            signup_email_otp_enabled: signupEmailOtpMode !== 'unavailable',
+            signup_email_otp_mode: signupEmailOtpMode,
             admin_email_otp_enabled: false,
             admin_email_otp_mode: 'disabled',
             admin_phone_otp_enabled: false,
