@@ -132,7 +132,15 @@ const checkFrontendShellHeaders = async () => {
   const response = await fetchWithRetry(`${frontendBaseUrl}/`);
   assert(response.ok, `expected 200, got ${response.status}`);
   assert(headerIncludes(response, 'cache-control', 'no-store'), 'frontend shell is missing no-store cache policy');
-  return String(response.headers.get('cache-control') || '');
+  assert(headerIncludes(response, 'strict-transport-security', 'max-age='), 'frontend shell is missing HSTS');
+  assert(headerIncludes(response, 'content-security-policy', "default-src 'self'"), 'frontend shell is missing the expected CSP');
+  assert(headerIncludes(response, 'content-security-policy', "frame-ancestors 'none'"), 'frontend CSP does not prevent framing');
+  assert(headerIncludes(response, 'x-content-type-options', 'nosniff'), 'frontend shell is missing nosniff');
+  assert(headerIncludes(response, 'x-frame-options', 'deny'), 'frontend shell is missing X-Frame-Options DENY');
+  assert(headerIncludes(response, 'referrer-policy', 'strict-origin-when-cross-origin'), 'frontend shell is missing the referrer policy');
+  assert(headerIncludes(response, 'cross-origin-opener-policy', 'same-origin-allow-popups'), 'frontend shell is missing the opener policy');
+  assert(headerIncludes(response, 'permissions-policy', 'api.razorpay.com'), 'frontend shell is missing the Razorpay permissions policy');
+  return 'cache, HSTS, CSP, framing, MIME, referrer, opener, permissions';
 };
 
 const checkManifestHeaders = async () => {

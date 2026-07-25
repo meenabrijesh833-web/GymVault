@@ -120,6 +120,17 @@ SMTP_FROM_EMAIL=team@gymvault.tech
 
 Generate the app-specific password in Zoho Accounts under Security. Enter it directly in local `.env` and Render; never put it in chat or Git.
 
+Mail DNS must include Zoho MX, SPF, DKIM, and DMARC records. The production audit verified the three Zoho MX records, `v=spf1 include:zoho.in ~all`, and the `zmail._domainkey` DKIM selector. Add the missing DMARC TXT record at the DNS provider:
+
+```text
+Type: TXT
+Name: _dmarc
+Value: v=DMARC1; p=none; rua=mailto:team@gymvault.tech; adkim=r; aspf=r; pct=100
+TTL: 3600
+```
+
+Keep `p=none` while reviewing aggregate reports. Move to `p=quarantine` and eventually `p=reject` after all legitimate senders pass SPF or DKIM alignment.
+
 Verification:
 
 ```powershell
