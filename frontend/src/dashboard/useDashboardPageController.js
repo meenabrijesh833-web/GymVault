@@ -336,9 +336,8 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       const allFailuresRetryable = allCallsFailed && failedCalls.every(isRetryableDashboardFailure);
       const firstFailure = failedCalls[0]?.reason || new Error('Dashboard data is unavailable.');
 
-      if (allFailuresRetryable && warmupRetryCountRef.current === 0) {
-        toast?.('Dashboard data is temporarily unavailable. Retrying automatically.', 'warning');
-      }
+      // Silent warmup retries: transient cold-start or network hiccups should recover invisibly
+      // without alarming the user. We only surface a message once retries are exhausted below.
 
       if (successfulCalls > 0) {
         setFetchError(null);
@@ -347,7 +346,9 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       if (allFailuresRetryable && warmupRetryCountRef.current < MAX_WARMUP_RETRIES) {
         warmupRetryCountRef.current += 1;
         setIsWarmupRetrying(true);
-        const retryDelayMs = Math.min(4000 * warmupRetryCountRef.current, 30000);
+        // Fast backoff: 800ms, 1.6s, 2.4s, ... capped at 8s. Recovers from Render cold-starts
+        // quickly while still yielding between attempts.
+        const retryDelayMs = Math.min(800 * warmupRetryCountRef.current, 8000);
         if (warmupRetryTimerRef.current) {
           window.clearTimeout(warmupRetryTimerRef.current);
         }
@@ -379,7 +380,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
         }, 120);
       }
     }
-  }, [branchScopeValue, currentUser, toast, token]);
+  }, [branchScopeValue, currentUser, token]);
 
   const finalizeDashboardPaymentSuccess = useCallback(async (memberId) => {
     try {
