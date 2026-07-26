@@ -1010,7 +1010,7 @@ export default function MemberSelfServiceHub({ member, token, onMemberChange }) 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [handleCheckRenewalStatus, renewalContext?.razorpay?.payment_link?.id]);
+  }, [handleCheckRenewalStatus, renewalContext?.razorpay?.payment_link, renewalContext?.razorpay?.payment_link?.id]);
 
   useEffect(() => {
     const paymentLinkId = dueContext?.razorpay?.payment_link?.id;
@@ -1023,17 +1023,14 @@ export default function MemberSelfServiceHub({ member, token, onMemberChange }) 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [dueContext?.razorpay?.payment_link?.id, handleCheckDueStatus]);
+  }, [dueContext?.razorpay?.payment_link, dueContext?.razorpay?.payment_link?.id, handleCheckDueStatus]);
 
   const currentMembership = dashboard?.membership || null;
-  const recentHistory = dashboard?.payments_summary?.recent_history || [];
-  const upcomingSummaryBookings = dashboard?.classes_summary?.upcoming_bookings || [];
   const paymentCapabilities = dashboard?.payment_capabilities || {
     online_enabled: false,
     channels: { razorpay: false, upi: false },
   };
   const canBookClasses = Boolean(currentMembership?.can_book_classes);
-  const visibleStatus = String(currentMembership?.status || member?.membership_status || '').toUpperCase();
   const summaryMember = buildMemberSnapshot(member, dashboard);
 
   if (loading && !dashboard) {

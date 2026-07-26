@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: Inter, sans-serif;
+  --font-sans: "Manrope", "Segoe UI Variable", sans-serif;
+  --font-display: "Sora", "Manrope", "Segoe UI Variable", sans-serif;
   --breakpoint-desktop: 1100px;
   --color-slate-50: #f8fafc;
   --color-slate-900: #0f172a;
@@ -23,6 +24,19 @@ body,
 }
 
 :root {
+  --gv-font-body: "Manrope", "Segoe UI Variable", sans-serif;
+  --gv-font-display: "Sora", "Manrope", "Segoe UI Variable", sans-serif;
+  --gv-text-page-title: 1.5rem;
+  --gv-text-section-title: 1.125rem;
+  --gv-text-panel-title: 0.9375rem;
+  --gv-text-metric: 1.5rem;
+  --gv-text-label: 0.6875rem;
+  --gv-text-body: 0.875rem;
+  --gv-text-caption: 0.75rem;
+  --gv-text-control: 0.75rem;
+  --gv-weight-regular: 500;
+  --gv-weight-strong: 700;
+  --gv-weight-display: 800;
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --app-viewport-height: 100vh;
@@ -51,12 +65,14 @@ body,
 *::before,
 *::after {
   box-sizing: border-box;
+  letter-spacing: 0 !important;
 }
 
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Inter', sans-serif;
+  font-family: var(--gv-font-body);
+  font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
   font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -68,6 +84,52 @@ body {
   background: #eef0ff;
   overflow-x: hidden;
   color: #0f172a;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--gv-font-display);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+.gv-type-metric {
+  font-family: var(--gv-font-display);
+  font-size: var(--gv-text-metric);
+  font-weight: var(--gv-weight-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.gv-type-metric--lg {
+  font-size: 1.875rem;
+}
+
+.gv-type-label {
+  font-size: var(--gv-text-label);
+  font-weight: var(--gv-weight-strong);
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.gv-type-caption {
+  font-size: var(--gv-text-caption);
+  font-weight: var(--gv-weight-regular);
+  line-height: 1.45;
+}
+
+.gv-type-control {
+  font-size: var(--gv-text-control);
+  font-weight: var(--gv-weight-display);
+  line-height: 1.25;
 }
 
 html,
@@ -109,6 +171,17 @@ html.gv-reduce-motion *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 html.gv-compact-ui .app-header-row {
@@ -492,7 +565,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
 .gv-skeleton {
   background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
   background-size: 800px 100%;
-  animation: gv-shimmer 1.4s infinite linear;
+  animation: gv-shimmer 1.2s ease-out 1;
   border-radius: 8px;
 }
 
@@ -546,7 +619,6 @@ html.gv-compact-ui main.app-scroll-shell > div {
   );
   background-size: 300% 300%;
   isolation: isolate;
-  will-change: background-position;
 }
 
 .gv-dashboard-hero::before,
@@ -564,7 +636,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
   width: 18rem;
   height: 18rem;
   background: radial-gradient(circle, rgba(99, 102, 241, 0.24) 0%, transparent 68%);
-  animation: gv-hero-wave-a 15s ease-in-out infinite alternate;
+  transform: translate3d(-2%, 2%, 0) scale(1.03);
 }
 
 .gv-dashboard-hero::after {
@@ -572,7 +644,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
   width: 18rem;
   height: 18rem;
   background: radial-gradient(circle, rgba(168, 85, 247, 0.18) 0%, transparent 70%);
-  animation: gv-hero-wave-b 18s ease-in-out infinite alternate;
+  transform: translate3d(2%, -2%, 0) scale(1.04);
 }
 
 .gv-dashboard-hero-grid {
@@ -599,7 +671,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
   width: 14rem;
   height: 14rem;
   background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 72%);
-  animation: gv-hero-wave-b 16s ease-in-out infinite alternate;
+  transform: translate3d(-2%, 3%, 0) scale(1.02);
 }
 
 .gv-dashboard-hero-orb-b {
@@ -608,7 +680,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
   width: 12rem;
   height: 10rem;
   background: radial-gradient(circle, rgba(168, 85, 247, 0.14) 0%, transparent 72%);
-  animation: gv-hero-wave-c 14s ease-in-out infinite alternate;
+  transform: translate3d(3%, -2%, 0) scale(1.02);
 }
 
 .gv-dashboard-hero-orb-c {
@@ -617,7 +689,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
   width: 10rem;
   height: 10rem;
   background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 74%);
-  animation: gv-hero-wave-a 17s ease-in-out infinite alternate;
+  transform: translate3d(-2%, 2%, 0) scale(1.01);
 }
 
 .gv-dashboard-hero-sheen {
@@ -625,7 +697,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
   inset: -36% -38%;
   pointer-events: none;
   background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,0.05) 48%, rgba(255,255,255,0.01) 58%, transparent 72%);
-  animation: gv-hero-sheen-pass 8.5s linear infinite;
+  animation: gv-hero-sheen-pass 1.2s ease-out 1 both;
   opacity: 0.45;
 }
 
@@ -786,8 +858,7 @@ html.gv-compact-ui main.app-scroll-shell > div {
 }
 
 .gv-auth-stat-card {
-  animation: gv-auth-stat-float 5s ease-in-out infinite;
-  animation-fill-mode: both;
+  transform: translateY(0);
 }
 
 /* Social button hover glow */

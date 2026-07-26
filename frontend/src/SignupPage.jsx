@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { buildApiUrl } from './utils/apiUrl';
 import { normalizeBillingCatalog as normalizeFrontendBillingCatalog } from './utils/billingCatalog';
+import { LEGAL_ACCEPTANCE_FIELDS } from './utils/legalDocuments';
 import {
   Dumbbell, Mail, Lock, ArrowRight, ArrowLeft, User, Building2,
   Eye, EyeOff, Check, Phone, MapPin, Sun, Moon, Loader2, AlertCircle, Copy,
@@ -471,6 +472,7 @@ export default function SignupPage({ onShowLogin, setToken }) {
           gym_city: city.trim(),
           branches_count: parseInt(branches, 10) || 1,
           selected_plan: selectedPlan,
+          ...LEGAL_ACCEPTANCE_FIELDS,
         });
 
         clearPendingGoogleSignup();
@@ -490,6 +492,7 @@ export default function SignupPage({ onShowLogin, setToken }) {
         gym_city:      city.trim(),
         branches_count: parseInt(branches) || 1,
         selected_plan:  selectedPlan,
+        ...LEGAL_ACCEPTANCE_FIELDS,
       });
       const res = await axios.post('/api/auth/login', { email: email.trim().toLowerCase(), password });
       setToken(res.data.token, res.data.user);
@@ -527,7 +530,7 @@ export default function SignupPage({ onShowLogin, setToken }) {
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div
-      className="app-min-shell-height flex items-center justify-center font-['Inter'] p-4 py-10 overflow-y-auto"
+      className="app-min-shell-height flex items-center justify-center font-sans p-4 py-10 overflow-y-auto"
       style={{
         background: T.page,
         transition: 'background 0.4s ease',
@@ -960,20 +963,18 @@ export default function SignupPage({ onShowLogin, setToken }) {
 
                 {/* Terms */}
                 <label className="flex items-start gap-3 cursor-pointer select-none">
-                  <div
-                    onClick={() => setAgreedToTerms(t => !t)}
-                    className="w-5 h-5 rounded-md flex items-center justify-center mt-0.5 flex-shrink-0 transition-all duration-200"
-                    style={{
-                      background: agreedToTerms ? 'linear-gradient(135deg, #6366f1, #a855f7)' : T.check.background,
-                      border:     agreedToTerms ? 'none' : T.check.border,
-                    }}>
-                    {agreedToTerms && <Check size={11} className="text-white" strokeWidth={3} />}
-                  </div>
-                  <span className="text-xs font-medium leading-relaxed" style={{ color: T.sub }}>
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(event) => setAgreedToTerms(event.target.checked)}
+                    className="mt-0.5 h-5 w-5 flex-shrink-0 accent-indigo-600"
+                    aria-describedby="signup-legal-consent"
+                  />
+                  <span id="signup-legal-consent" className="text-xs font-medium leading-relaxed" style={{ color: T.sub }}>
                     I agree to GymVault's{' '}
-                    <span className="text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer">Terms of Service</span>
+                    <a href="/terms" target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 transition-colors">Terms of Service</a>
                     {' '}and{' '}
-                    <span className="text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer">Privacy Policy</span>
+                    <a href="/privacy" target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 transition-colors">Privacy Policy</a>
                   </span>
                 </label>
 

@@ -5,6 +5,13 @@ import PaginationControls from './components/PaginationControls';
 import SafeResponsiveContainer from './components/SafeResponsiveContainer';
 import { QRCodeCanvas } from 'qrcode.react';
 import { getBranchLabel, getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
+import {
+  getAttendanceInactiveData,
+  getAttendanceLeaderboardData,
+  getAttendanceOverviewBundleData,
+  getAttendancePeakHoursData,
+  getAttendanceRecordsData,
+} from './utils/pageDataPrefetch';
 import useCountUp from './utils/useCountUp';
 import { buildReminderPreviewDialog, getReminderPreviewBlockReason, previewWhatsAppReminders, sendWhatsAppReminders, summarizeReminderResult } from './utils/whatsappReminders';
 import {
@@ -612,12 +619,11 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
   }, [branchScopeValue, checkinNote, headers, handleCheckinSuccess, selectedMember, toast]);
 
   const loadOverviewBundle = useCallback(async () => {
-    const [overviewRes, feedRes, heatmapRes, modeRes] = await Promise.all([
-      axios.get('/api/attendance/overview', { ...headers, params: branchQueryParams }),
-      axios.get('/api/attendance/feed', { ...headers, params: { ...branchQueryParams, limit: 25 } }),
-      axios.get('/api/attendance/heatmap', { ...headers, params: { ...branchQueryParams, days: 84 } }),
-      axios.get('/api/attendance/mode', headers),
-    ]);
+    const [overviewRes, feedRes, heatmapRes, modeRes] = await getAttendanceOverviewBundleData({
+      token,
+      currentUser,
+      branchScopeValue,
+    });
 
     setOverview(asObject(unwrapApiData(overviewRes.data), {}));
     setFeed(asArray(unwrapApiData(feedRes.data)));
@@ -633,16 +639,18 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
       gym_radius_meters: modeData.gym_radius_meters || DEFAULT_GYM_RADIUS_METERS,
       allow_expired_checkin: Boolean(modeData.allow_expired_checkin),
     }));
-  }, [branchQueryParams, headers]);
+  }, [branchScopeValue, currentUser, token]);
 
-  loadOverviewBundleRef.current = loadOverviewBundle;
+  useEffect(() => {
+    loadOverviewBundleRef.current = loadOverviewBundle;
+  }, [loadOverviewBundle]);
 
   const loadPeakHours = useCallback(async (period) => {
-    const res = await axios.get('/api/attendance/peak-hours', {
-      ...headers,
-      params: period === 'today'
-        ? { ...branchQueryParams, today: true }
-        : { ...branchQueryParams, days: period },
+    const res = await getAttendancePeakHoursData({
+      token,
+      currentUser,
+      branchScopeValue,
+      ...(period === 'today' ? { today: true } : { days: period }),
     });
     setPeakHours(
       asArray(unwrapApiData(res.data)).map((item) => ({
@@ -650,44 +658,42 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
         count: item.count || 0,
       }))
     );
-  }, [branchQueryParams, headers]);
+  }, [branchScopeValue, currentUser, token]);
 
   const loadRecords = useCallback(async () => {
-    const res = await axios.get('/api/attendance/records', {
-      ...headers,
-      params: {
-        paginate: true,
-        page: recordsPagination.page,
-        limit: recordsPagination.limit,
-        range,
-        ...branchQueryParams,
-        from: range === 'custom' && fromDate ? fromDate : undefined,
-        to: range === 'custom' && toDate ? toDate : undefined,
-      },
+    const res = await getAttendanceRecordsData({
+      token,
+      currentUser,
+      branchScopeValue,
+      page: recordsPagination.page,
+      limit: recordsPagination.limit,
+      range,
+      from: range === 'custom' && fromDate ? fromDate : undefined,
+      to: range === 'custom' && toDate ? toDate : undefined,
     });
     setRecords(asArray(unwrapApiData(res.data)));
     setRecordsPagination((prev) => ({
       ...prev,
       ...(res.data?.pagination || {}),
     }));
-  }, [branchQueryParams, fromDate, headers, range, recordsPagination.limit, recordsPagination.page, toDate]);
+  }, [branchScopeValue, currentUser, fromDate, range, recordsPagination.limit, recordsPagination.page, toDate, token]);
 
   const loadInactive = useCallback(async (days = inactiveDays) => {
     const requestId = inactiveRequestSeqRef.current + 1;
     inactiveRequestSeqRef.current = requestId;
 
-    const res = await axios.get('/api/attendance/inactive', { ...headers, params: { ...branchQueryParams, days } });
+    const res = await getAttendanceInactiveData({ token, currentUser, branchScopeValue, days });
     if (inactiveRequestSeqRef.current !== requestId) {
       return;
     }
 
     setInactiveMembers(asArray(unwrapApiData(res.data)));
-  }, [branchQueryParams, headers, inactiveDays]);
+  }, [branchScopeValue, currentUser, inactiveDays, token]);
 
   const loadLeaderboard = useCallback(async () => {
-    const res = await axios.get('/api/attendance/leaderboard', { ...headers, params: { ...branchQueryParams, days: 30, limit: 6 } });
+    const res = await getAttendanceLeaderboardData({ token, currentUser, branchScopeValue, days: 30, limit: 6 });
     setLeaderboard(asArray(unwrapApiData(res.data)));
-  }, [branchQueryParams, headers]);
+  }, [branchScopeValue, currentUser, token]);
 
   const refreshAttendanceViews = useCallback(() => Promise.all([
     loadOverviewBundle(),
@@ -993,29 +999,29 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
     <div className="space-y-5 p-2">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white backdrop-blur-sm rounded-2xl border border-slate-200/60 p-4 gv-fade-up">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Today's Check-ins</p>
-          <h3 className="text-3xl font-black text-slate-900 mt-1">{animatedTodayCheckins}</h3>
+          <p className="gv-type-label text-slate-400">Today's Check-ins</p>
+          <h3 className="gv-type-metric gv-type-metric--lg text-slate-900 mt-1">{animatedTodayCheckins}</h3>
         </div>
         <div className="bg-white backdrop-blur-sm rounded-2xl border border-slate-200/60 p-4 gv-fade-up gv-fade-up-1">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Yesterday</p>
-          <h3 className="text-3xl font-black text-slate-900 mt-1">{animatedYesterdayCheckins}</h3>
+          <p className="gv-type-label text-slate-400">Yesterday</p>
+          <h3 className="gv-type-metric gv-type-metric--lg text-slate-900 mt-1">{animatedYesterdayCheckins}</h3>
         </div>
         <div className="bg-white backdrop-blur-sm rounded-2xl border border-slate-200/60 p-4 gv-fade-up gv-fade-up-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active Members Today</p>
-          <h3 className="text-3xl font-black text-emerald-600 mt-1">{animatedActiveMembersToday}</h3>
+          <p className="gv-type-label text-slate-400">Active Members Today</p>
+          <h3 className="gv-type-metric gv-type-metric--lg text-emerald-600 mt-1">{animatedActiveMembersToday}</h3>
         </div>
         <div className="bg-white backdrop-blur-sm rounded-2xl border border-slate-200/60 p-4 gv-fade-up gv-fade-up-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Peak Hour Today</p>
-          <h3 className="text-3xl font-black text-indigo-600 mt-1">{peakHourLabel}</h3>
-          <p className="text-xs font-bold text-slate-400 mt-1">{animatedPeakHourCount} check-ins</p>
+          <p className="gv-type-label text-slate-400">Peak Hour Today</p>
+          <h3 className="gv-type-metric gv-type-metric--lg text-indigo-600 mt-1">{peakHourLabel}</h3>
+          <p className="gv-type-caption text-slate-400 mt-1">{animatedPeakHourCount} check-ins</p>
         </div>
       </div>
 
       {/* ── Attendance Hub Tab Bar ── */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-0.5 w-fit">
-        <button onClick={() => setAttendanceTab('checkin')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${attendanceTab === 'checkin' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Check-in Ops</button>
-        {isOwner && <button onClick={() => setAttendanceTab('policies')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${attendanceTab === 'policies' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Access Policies</button>}
-        {isOwner && <button onClick={() => setAttendanceTab('health')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${attendanceTab === 'health' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Reader Health</button>}
+        <button onClick={() => setAttendanceTab('checkin')} className={`gv-type-control px-4 py-1.5 rounded-lg transition-all ${attendanceTab === 'checkin' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Check-in Ops</button>
+        {isOwner && <button onClick={() => setAttendanceTab('policies')} className={`gv-type-control px-4 py-1.5 rounded-lg transition-all ${attendanceTab === 'policies' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Access Policies</button>}
+        {isOwner && <button onClick={() => setAttendanceTab('health')} className={`gv-type-control px-4 py-1.5 rounded-lg transition-all ${attendanceTab === 'health' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Reader Health</button>}
       </div>
 
       {/* ═══════ CHECK-IN OPS TAB ═══════ */}

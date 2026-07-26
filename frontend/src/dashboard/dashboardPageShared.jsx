@@ -62,10 +62,10 @@ export const KPICard = (props) => {
       </div>
       <div className="relative z-10 mt-2.5 sm:mt-3">
         {tag && (
-          <span className="inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-500 mb-1.5">{tag}</span>
+          <span className="gv-type-label inline-block px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-500 mb-1.5">{tag}</span>
         )}
-        <h3 className="text-[23px] sm:text-[26px] font-black text-slate-900 tracking-tight leading-none">{displayVal}</h3>
-        <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-1.5">{title}</p>
+        <h3 className="gv-type-metric text-slate-900">{displayVal}</h3>
+        <p className="gv-type-label text-slate-400 mt-1.5">{title}</p>
       </div>
     </>
   );

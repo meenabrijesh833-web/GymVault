@@ -8,14 +8,20 @@
     "start:cluster": "pm2 start ecosystem.config.js",
     "stop:cluster": "pm2 stop gym-api",
     "reload:cluster": "pm2 reload gym-api",
-    "dev": "nodemon server.js",
-    "dev:all": "node scripts/dev-all.js",
-    "backup:db": "node scripts/backup-db.js",
-    "smoke:backend": "node scripts/test-backend.js --runtime",
-    "smoke:production": "node scripts/smoke-production.js",
-    "check:providers": "node scripts/check-provider-readiness.js",
-    "rfid:simulate": "node scripts/rfid-bridge-simulator.js",
-    "test": "node scripts/test-backend.js"
+    "dev": "nodemon --ignore frontend/ server.js",
+    "dev:all": "node operations/scripts/dev-all.js",
+    "backup:db": "node operations/scripts/backup-db.js",
+    "smoke:backend": "node operations/scripts/test-backend.js --runtime",
+    "smoke:production": "node operations/scripts/smoke-production.js",
+    "check:providers": "node operations/scripts/check-provider-readiness.js",
+    "check:tenant-rls": "node operations/scripts/check-tenant-rls.js",
+    "check:tenant-context": "node operations/scripts/check-tenant-db-context.js",
+    "check:security-events": "node operations/scripts/check-security-events.js",
+    "check:image-safety": "node operations/scripts/check-image-content-safety.js",
+    "check:request-schemas": "node operations/scripts/check-request-schemas.js",
+    "check:repo-layout": "node operations/scripts/check-repository-layout.js",
+    "rfid:simulate": "node operations/scripts/rfid-bridge-simulator.js",
+    "test": "node operations/scripts/test-backend.js"
   },
   "keywords": [],
   "author": "",
@@ -37,16 +43,16 @@
     "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
-    "nodemailer": "^8.0.4",
+    "nodemailer": "^9.0.3",
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.18.0",
-    "pm2": "^5.4.3",
+    "pm2": "^7.0.3",
     "razorpay": "^2.9.6",
+    "sharp": "^0.35.3",
     "twilio": "^5.13.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11",
-    "sharp": "^0.34.5"
+    "nodemon": "^3.1.14"
   }
 }

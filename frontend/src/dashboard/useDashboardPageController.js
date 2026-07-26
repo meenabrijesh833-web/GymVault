@@ -3,6 +3,7 @@ import axios from 'axios';
 import { copyCollectionText, describeCollectionLinkDelivery } from '../utils/memberCollection';
 import { normalizeProfileImageUrl } from '../utils/profileImage';
 import { reportClientError } from '../utils/clientErrorReporter';
+import { getDashboardEntryData } from '../utils/pageDataPrefetch';
 import {
   formatHour,
   isValidPhoneInput,
@@ -76,7 +77,7 @@ const normalizeActionPayments = (sourcePayments) => {
 };
 
 export default function useDashboardPageController({ appRuntime, setCurrentPage, isActive = true }) {
-  const { token, toast, navigateTo: navTo, branchScopeValue } = appRuntime;
+  const { token, toast, navigateTo: navTo, branchScopeValue, currentUser } = appRuntime;
   const navigateTo = useMemo(() => navTo || ((...args) => setCurrentPage?.(...args)), [navTo, setCurrentPage]);
 
   const [members, setMembers] = useState([]);
@@ -118,8 +119,6 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
   const dashboardLastSyncAtRef = useRef(0);
   const isDashboardActiveRef = useRef(Boolean(isActive));
   const checkinBusyIdsRef = useRef(new Set());
-  const broadcastComposerRequestRef = useRef(null);
-  const broadcastComposerLoadedRef = useRef(false);
   const paymentRazorpayPollBusyRef = useRef(false);
 
   const [addFormData, setAddFormData] = useState({ full_name: '', email: '', phone: '' });
@@ -143,6 +142,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
   const [broadcastSearch, setBroadcastSearch] = useState('');
   const [broadcastCustomIds, setBroadcastCustomIds] = useState([]);
   const [broadcastTemplates, setBroadcastTemplates] = useState([]);
+  const [broadcastComposerLoaded, setBroadcastComposerLoaded] = useState(false);
   const [broadcastActionMeta, setBroadcastActionMeta] = useState(null);
   const [gymName, setGymName] = useState('');
   const [gymBilling, setGymBilling] = useState({
@@ -215,7 +215,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     toast('Copy failed on this device. Long-press and copy it manually.', 'warning');
   }, [toast]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async function fetchDashboardData() {
     if (dashboardFetchInFlightRef.current) {
       dashboardQueuedRefreshRef.current = true;
       return;
@@ -224,32 +224,19 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     dashboardFetchInFlightRef.current = true;
 
     try {
-      const requestConfig = {
-        ...authHeaders,
-        timeout: DASHBOARD_REQUEST_TIMEOUT_MS,
-        suppressGlobalErrorToast: true,
-        params: branchScopeValue ? { branch_id: branchScopeValue } : undefined,
-      };
       const [
         membersRes, plansRes, statsRes,
         chart30Res, chart7Res, attendanceRes,
         todayRes, setupRes, churnRes, logsRes,
         leadsSummaryRes,
         settingsRes,
-      ] = await Promise.allSettled([
-        axios.get('/api/members', requestConfig),
-        axios.get('/api/memberships/plans', requestConfig),
-        axios.get('/api/payments/stats', requestConfig),
-        axios.get('/api/payments/chart?days=30', requestConfig),
-        axios.get('/api/payments/chart?days=7', requestConfig),
-        axios.get('/api/attendance/summary', requestConfig),
-        axios.get('/api/attendance/today', requestConfig),
-        axios.get('/api/dashboard/setup-status', requestConfig),
-        axios.get('/api/notifications/campaign/churn-scores?limit=30', requestConfig),
-        axios.get('/api/notifications/campaign/logs?limit=50', requestConfig),
-        axios.get('/api/leads/summary', requestConfig),
-        axios.get('/api/settings', requestConfig),
-      ]);
+      ] = await getDashboardEntryData({
+        token,
+        currentUser,
+        branchScopeValue,
+        useIntentCache: true,
+        timeoutMs: DASHBOARD_REQUEST_TIMEOUT_MS,
+      });
 
       const pickData = (result, fallback) => {
         if (result.status !== 'fulfilled') return fallback;
@@ -354,7 +341,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
           window.clearTimeout(warmupRetryTimerRef.current);
         }
         warmupRetryTimerRef.current = window.setTimeout(() => {
-          fetchData();
+          fetchDashboardData();
         }, retryDelayMs);
       } else {
         warmupRetryCountRef.current = 0;
@@ -374,11 +361,11 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       if (dashboardQueuedRefreshRef.current) {
         dashboardQueuedRefreshRef.current = false;
         window.setTimeout(() => {
-          fetchData();
+          fetchDashboardData();
         }, 120);
       }
     }
-  }, [authHeaders, branchScopeValue, toast]);
+  }, [branchScopeValue, currentUser, toast, token]);
 
   const finalizeDashboardPaymentSuccess = useCallback(async (memberId) => {
     try {
@@ -733,34 +720,21 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
 
   const ensureBroadcastComposer = useCallback(async ({ preferCache = true } = {}) => {
     if (!token) return [];
-    if (preferCache && broadcastComposerLoadedRef.current) {
-      return broadcastTemplates;
-    }
-    if (broadcastComposerRequestRef.current) {
-      return broadcastComposerRequestRef.current;
-    }
+    if (preferCache && broadcastComposerLoaded) return [];
 
     const requestConfig = { ...authHeaders, timeout: DASHBOARD_REQUEST_TIMEOUT_MS };
-    const request = axios.get('/api/notifications/campaign/composer', requestConfig)
-      .then((res) => {
-        const payload = asObject(unwrapApiData(res.data), {});
-        const templates = normalizeBroadcastTemplates(payload.templates);
-        const nextGymName = String(payload.gym_name || '').trim();
+    const res = await axios.get('/api/notifications/campaign/composer', requestConfig);
+    const payload = asObject(unwrapApiData(res.data), {});
+    const templates = normalizeBroadcastTemplates(payload.templates);
+    const nextGymName = String(payload.gym_name || '').trim();
 
-        setBroadcastTemplates(templates);
-        if (nextGymName) {
-          setGymName(nextGymName);
-        }
-        broadcastComposerLoadedRef.current = true;
-        return templates;
-      })
-      .finally(() => {
-        broadcastComposerRequestRef.current = null;
-      });
-
-    broadcastComposerRequestRef.current = request;
-    return request;
-  }, [authHeaders, broadcastTemplates, token]);
+    setBroadcastTemplates(templates);
+    if (nextGymName) {
+      setGymName(nextGymName);
+    }
+    setBroadcastComposerLoaded(true);
+    return templates;
+  }, [authHeaders, broadcastComposerLoaded, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -769,7 +743,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
 
   useEffect(() => {
     if (!showBroadcastModal) return;
-    ensureBroadcastComposer({ preferCache: false }).catch(() => {});
+    ensureBroadcastComposer({ preferCache: true }).catch(() => {});
   }, [ensureBroadcastComposer, showBroadcastModal]);
 
   useEffect(() => {
@@ -780,20 +754,15 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
         return;
       }
 
-      broadcastComposerLoadedRef.current = false;
-      broadcastComposerRequestRef.current = null;
+      setBroadcastComposerLoaded(false);
       setBroadcastTemplates([]);
-
-      if (showBroadcastModal) {
-        ensureBroadcastComposer({ preferCache: false }).catch(() => {});
-      }
     };
 
     window.addEventListener('gymvault:data-changed', handleTemplateStateRefresh);
     return () => {
       window.removeEventListener('gymvault:data-changed', handleTemplateStateRefresh);
     };
-  }, [ensureBroadcastComposer, isActive, showBroadcastModal, token]);
+  }, [isActive, token]);
 
   useEffect(() => {
     if (!showBroadcastModal || broadcastTemplates.length === 0) return;
@@ -841,8 +810,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     setBroadcastMessage('');
     setBroadcastActionMeta(actionMeta || null);
     setShowBroadcastModal(true);
-    ensureBroadcastComposer({ preferCache: false }).catch(() => {});
-  }, [ensureBroadcastComposer]);
+  }, []);
 
   const openBroadcastDraftForMembers = useCallback(({ memberIds = [], audience = 'All', actionMeta = null }) => {
     const normalizedIds = Array.from(new Set(
@@ -858,8 +826,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     setBroadcastMessage('');
     setBroadcastActionMeta(actionMeta || null);
     setShowBroadcastModal(true);
-    ensureBroadcastComposer({ preferCache: false }).catch(() => {});
-  }, [ensureBroadcastComposer]);
+  }, []);
 
   const buildSmartMemberCta = useCallback(({
     members: sourceMembers,
@@ -1006,7 +973,18 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     } finally {
       setIsAutomating(false);
     }
-  }, [authHeaders, broadcastAudience, broadcastCustomIds, broadcastMessage, broadcastTemplateKey, fetchData, toast]);
+  }, [
+    authHeaders,
+    broadcastActionMeta?.actionKey,
+    broadcastActionMeta?.audienceHash,
+    broadcastActionMeta?.expectedCount,
+    broadcastAudience,
+    broadcastCustomIds,
+    broadcastMessage,
+    broadcastTemplateKey,
+    fetchData,
+    toast,
+  ]);
 
   const checkedInMemberIds = useMemo(() => new Set(
     todayAttendance
@@ -1315,7 +1293,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       return Number.isFinite(created) && created >= startOfDay;
     }).length;
 
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = today.getTime() - (7 * 24 * 60 * 60 * 1000);
     const weeklyLogs = campaignLogs.filter((log) => {
       const created = new Date(log.created_at).getTime();
       return Number.isFinite(created) && created >= sevenDaysAgo;
@@ -1803,7 +1781,6 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     const retentionRate = members.length > 0 ? Math.round((active.length / members.length) * 100) : 0;
     const avgDailyRevenue = chart30.length > 0 ? Math.round(monthlyRevenue / Math.max(1, chart30.filter(d => d.revenue > 0).length)) : 0;
     const bestDay = chart30.reduce((best, day) => (day.revenue || 0) > (best?.revenue || 0) ? day : best, { revenue: 0 });
-    const worstRecentDay = chart30.slice(-7).reduce((worst, day) => ((day.revenue || 0) < (worst?.revenue || Infinity) && day.date) ? day : worst, { revenue: Infinity });
     const activeWithNoVisit14 = active.filter(m => getDaysAbsent(m) >= 14 && getDaysAbsent(m) < 30).length;
     const convertedThisMonth = Number(normalizedLeadSummary.converted_this_month || 0);
     const lostLeads = Number(normalizedLeadSummary.lost_leads || 0);
@@ -2128,6 +2105,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     };
   }, [
     attendanceHeatmap,
+    buildBroadcastActionMeta,
     buildSmartMemberCta,
     buildSmartPaymentCta,
     campaignLogs,
@@ -2136,6 +2114,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
     gymBilling,
     leadSummary,
     members,
+    isBroadcastActionCompleted,
     navigateTo,
     openBroadcastDraft,
     payStats.pending_dues,

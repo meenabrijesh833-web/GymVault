@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import {
   Users, ClipboardCheck, MessageSquare, UserPlus, Target, CreditCard,
@@ -140,8 +140,7 @@ function StaffDashboard({ appRuntime, isActive = true }) {
     unpaidMembers: 0,
     recentCheckins: [],
   });
-  const [loading, setLoading] = useState(true);
-  const [reminderLoadingId, setReminderLoadingId] = useState(null);
+  const [, setLoading] = useState(true);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [taskBusyId, setTaskBusyId] = useState('');
@@ -161,8 +160,7 @@ function StaffDashboard({ appRuntime, isActive = true }) {
   const [campaignLogs, setCampaignLogs] = useState([]);
   const [actionMembers, setActionMembers] = useState({ expiring: [], expired: [], unpaid: [] });
   const [gymName, setGymName] = useState('');
-  const broadcastComposerRequestRef = useRef(null);
-  const broadcastComposerLoadedRef = useRef(false);
+  const [broadcastComposerLoaded, setBroadcastComposerLoaded] = useState(false);
 
   const staffRole = String(currentUser?.staff_role || '').toUpperCase();
   const perms = useMemo(() => Array.isArray(currentUser?.permissions) ? currentUser.permissions : [], [currentUser?.permissions]);
@@ -298,17 +296,13 @@ function StaffDashboard({ appRuntime, isActive = true }) {
 
   const ensureBroadcastComposer = useCallback(async ({ preferCache = true } = {}) => {
     if (!token || !canMessageMembers) return [];
-    if (preferCache && broadcastComposerLoadedRef.current) {
-      return broadcastTemplates;
-    }
-    if (broadcastComposerRequestRef.current) {
-      return broadcastComposerRequestRef.current;
-    }
+    if (preferCache && broadcastComposerLoaded) return [];
 
-    const request = axios.get(`${API}/api/notifications/campaign/composer`, {
-      ...authHeaders,
-      timeout: STAFF_DASHBOARD_REQUEST_TIMEOUT_MS,
-    }).then((res) => {
+    try {
+      const res = await axios.get(`${API}/api/notifications/campaign/composer`, {
+        ...authHeaders,
+        timeout: STAFF_DASHBOARD_REQUEST_TIMEOUT_MS,
+      });
       const payload = asObject(unwrapApiData(res.data), {});
       const templates = normalizeBroadcastTemplates(payload.templates);
       const nextGymName = String(payload.gym_name || '').trim();
@@ -317,20 +311,15 @@ function StaffDashboard({ appRuntime, isActive = true }) {
       if (nextGymName) {
         setGymName(nextGymName);
       }
-      broadcastComposerLoadedRef.current = true;
+      setBroadcastComposerLoaded(true);
       return templates;
-    }).catch((err) => {
+    } catch (err) {
       if (err?.response?.status !== 403) {
         reportClientError('Staff broadcast composer fetch', err);
       }
       return [];
-    }).finally(() => {
-      broadcastComposerRequestRef.current = null;
-    });
-
-    broadcastComposerRequestRef.current = request;
-    return request;
-  }, [authHeaders, broadcastTemplates, canMessageMembers, token]);
+    }
+  }, [authHeaders, broadcastComposerLoaded, canMessageMembers, token]);
 
   useEffect(() => {
     if (!token || !isActive) return undefined;
@@ -357,7 +346,7 @@ function StaffDashboard({ appRuntime, isActive = true }) {
 
   useEffect(() => {
     if (!showBroadcastModal) return;
-    ensureBroadcastComposer({ preferCache: false }).catch(() => {});
+    ensureBroadcastComposer({ preferCache: true }).catch(() => {});
   }, [ensureBroadcastComposer, showBroadcastModal]);
 
   useEffect(() => {
@@ -368,20 +357,15 @@ function StaffDashboard({ appRuntime, isActive = true }) {
         return;
       }
 
-      broadcastComposerLoadedRef.current = false;
-      broadcastComposerRequestRef.current = null;
+      setBroadcastComposerLoaded(false);
       setBroadcastTemplates([]);
-
-      if (showBroadcastModal) {
-        ensureBroadcastComposer({ preferCache: false }).catch(() => {});
-      }
     };
 
     window.addEventListener('gymvault:data-changed', handleTemplateStateRefresh);
     return () => {
       window.removeEventListener('gymvault:data-changed', handleTemplateStateRefresh);
     };
-  }, [canMessageMembers, ensureBroadcastComposer, isActive, showBroadcastModal, token]);
+  }, [canMessageMembers, isActive, token]);
 
   useEffect(() => {
     if (!showBroadcastModal || broadcastTemplates.length === 0) return;
@@ -415,36 +399,6 @@ function StaffDashboard({ appRuntime, isActive = true }) {
     setBroadcastMessage(resolved);
   }, [broadcastTemplateKey, broadcastTemplates, gymName]);
 
-  const sendExpiryReminder = useCallback(async (memberId) => {
-    if (!token || reminderLoadingId || !canMessageMembers) return;
-    setReminderLoadingId(memberId);
-    try {
-      const res = await axios.post(`${API}/api/notifications/reminders/send`, {
-        member_ids: [memberId],
-      }, { headers: { 'x-auth-token': token } });
-
-      const payload = asObject(unwrapApiData(res.data), {});
-      const delivered = Number(payload.sent_to_count || 0);
-      const failed = Number(payload.failed_count || 0);
-      const firstFailure = asArray(payload.failures)[0];
-
-      if (delivered > 0) {
-        toast?.(
-          failed > 0
-            ? `Reminder sent to ${delivered} member, ${failed} failed.`
-            : `Reminder sent to ${delivered} member.`,
-          failed > 0 ? 'warning' : 'success',
-        );
-      } else {
-        toast?.(firstFailure?.reason || 'Reminder could not be sent.', 'warning');
-      }
-    } catch (err) {
-      toast?.(err?.response?.data?.error || 'Reminder send failed.', 'error');
-    } finally {
-      setReminderLoadingId(null);
-    }
-  }, [canMessageMembers, reminderLoadingId, toast, token]);
-
   const openBroadcastDraft = useCallback((audience, actionMeta = null) => {
     setBroadcastAudience(audience);
     setBroadcastTemplateKey(resolveBroadcastTemplateSuggestion(audience));
@@ -453,8 +407,7 @@ function StaffDashboard({ appRuntime, isActive = true }) {
     setBroadcastMessage('');
     setBroadcastActionMeta(actionMeta || null);
     setShowBroadcastModal(true);
-    ensureBroadcastComposer({ preferCache: false }).catch(() => {});
-  }, [ensureBroadcastComposer]);
+  }, []);
 
   const openBroadcastDraftForMembers = useCallback(({ memberIds = [], audience = 'All', actionMeta = null }) => {
     const normalizedIds = Array.from(new Set(
@@ -470,8 +423,7 @@ function StaffDashboard({ appRuntime, isActive = true }) {
     setBroadcastMessage('');
     setBroadcastActionMeta(actionMeta || null);
     setShowBroadcastModal(true);
-    ensureBroadcastComposer({ preferCache: false }).catch(() => {});
-  }, [ensureBroadcastComposer]);
+  }, []);
 
   const handleBroadcast = useCallback(async (event) => {
     event.preventDefault();
@@ -518,7 +470,7 @@ function StaffDashboard({ appRuntime, isActive = true }) {
     } finally {
       setIsAutomating(false);
     }
-  }, [API, authHeaders, broadcastActionMeta, broadcastAudience, broadcastCustomIds, broadcastMessage, broadcastTemplateKey, fetchCampaignLogs, fetchStats, toast]);
+  }, [authHeaders, broadcastActionMeta, broadcastAudience, broadcastCustomIds, broadcastMessage, broadcastTemplateKey, fetchCampaignLogs, fetchStats, toast]);
 
   const closeTaskModal = useCallback(() => {
     setActiveTask(null);
@@ -604,17 +556,15 @@ function StaffDashboard({ appRuntime, isActive = true }) {
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   // ── Build quick actions based on role ──
-  const quickActions = useMemo(() => {
-    const actions = [];
-    if (canAttendance) actions.push({ label: 'Check-In', icon: CheckCircle, gradient: 'linear-gradient(135deg, #10b981, #059669)', action: () => navigateTo('Attendance') });
-    if (canCreateMembers) actions.push({ label: 'Add Member', icon: UserPlus, gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)', action: () => navigateTo('Members', 'All', { action: 'add' }) });
-    if (canPayments) actions.push({ label: 'Collect Due', icon: DollarSign, gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', action: () => navigateTo('Payments') });
-    if (canMessageMembers) actions.push({ label: 'Broadcast', icon: MessageSquare, gradient: 'linear-gradient(135deg, #059669, #10b981)', action: () => openBroadcastDraft('All') });
-    if (canPayments) actions.push({ label: 'Payroll', icon: Wallet, gradient: 'linear-gradient(135deg, #ec4899, #db2777)', action: () => navigateTo('Payments', 'All', { section: 'payroll-list' }) });
-    if (canLeads) actions.push({ label: 'Leads', icon: Target, gradient: 'linear-gradient(135deg, #f97316, #ea580c)', action: () => navigateTo('Leads') });
-    if (canMembers) actions.push({ label: 'Members', icon: Users, gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)', action: () => navigateTo('Members') });
-    return actions.slice(0, 4);
-  }, [canAttendance, canCreateMembers, canLeads, canMembers, canMessageMembers, canPayments, navigateTo, openBroadcastDraft]);
+  const quickActions = useMemo(() => [
+    canAttendance && { label: 'Check-In', icon: CheckCircle, gradient: 'linear-gradient(135deg, #10b981, #059669)', action: () => navigateTo('Attendance') },
+    canCreateMembers && { label: 'Add Member', icon: UserPlus, gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)', action: () => navigateTo('Members', 'All', { action: 'add' }) },
+    canPayments && { label: 'Collect Due', icon: DollarSign, gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', action: () => navigateTo('Payments') },
+    canMessageMembers && { label: 'Broadcast', icon: MessageSquare, gradient: 'linear-gradient(135deg, #059669, #10b981)', action: () => openBroadcastDraft('All') },
+    canPayments && { label: 'Payroll', icon: Wallet, gradient: 'linear-gradient(135deg, #ec4899, #db2777)', action: () => navigateTo('Payments', 'All', { section: 'payroll-list' }) },
+    canLeads && { label: 'Leads', icon: Target, gradient: 'linear-gradient(135deg, #f97316, #ea580c)', action: () => navigateTo('Leads') },
+    canMembers && { label: 'Members', icon: Users, gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)', action: () => navigateTo('Members') },
+  ].filter(Boolean).slice(0, 4), [canAttendance, canCreateMembers, canLeads, canMembers, canMessageMembers, canPayments, navigateTo, openBroadcastDraft]);
 
   const taskCounts = useMemo(() => {
     return tasks.reduce((counts, task) => {

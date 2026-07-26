@@ -24,4 +24,25 @@ export default defineConfig({
       'Permissions-Policy': permissionsPolicyHeader,
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalizedId = id.replace(/\\/g, '/')
+          if (normalizedId.includes('/node_modules/html5-qrcode/')) return 'qr-scanner'
+          if (normalizedId.includes('/node_modules/react/')
+            || normalizedId.includes('/node_modules/react-dom/')
+            || normalizedId.includes('/node_modules/scheduler/')) return 'react-vendor'
+          if (normalizedId.includes('/node_modules/recharts/')
+            || normalizedId.includes('/node_modules/d3-')
+            || normalizedId.includes('/node_modules/redux/')) return 'charts-vendor'
+          if (normalizedId.includes('/node_modules/lucide-react/')) return 'icons-vendor'
+          if (normalizedId.includes('/node_modules/axios/')) return 'http-vendor'
+          if (normalizedId.includes('/node_modules/qrcode.react/')
+            || normalizedId.includes('/node_modules/qrcode/')) return 'qr-renderer-vendor'
+          return undefined
+        },
+      },
+    },
+  },
 })

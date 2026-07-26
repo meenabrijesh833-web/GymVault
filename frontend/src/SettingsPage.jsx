@@ -14,6 +14,7 @@ import PageLoader from './PageLoader';
 import { applyInterfacePreferences, saveInterfacePreferencesLocal } from './utils/interfacePreferences';
 import { apiFetch } from './utils/apiFetch';
 import { reportClientError } from './utils/clientErrorReporter';
+import { getSettingsBillingConfigData, getSettingsEntryData } from './utils/pageDataPrefetch';
 import {
   computeEffectiveLimits as computeCatalogEffectiveLimits,
   getBillingCycleDays,
@@ -611,6 +612,7 @@ const loadRazorpayScript = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteCurrentPassword, setDeleteCurrentPassword] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [processingAddonKey, setProcessingAddonKey] = useState(null);
   const invoiceStorageKey = `gv_invoice_${token?.slice(-12) || 'default'}`;
@@ -650,10 +652,10 @@ const loadRazorpayScript = () => {
   // Fetch Razorpay public key from backend (avoids need for VITE_ build-time env var)
   useEffect(() => {
     if (!token || !isActive || !isOwner) return;
-    axios.get('/api/billing/config', { headers: { 'x-auth-token': token } })
+    getSettingsBillingConfigData({ token, currentUser, branchScopeValue })
       .then(res => setRazorpayKey(res.data.razorpay_key_id || ''))
       .catch(() => { setRazorpayKey(''); });
-  }, [token, isActive, isOwner]);
+  }, [branchScopeValue, currentUser, token, isActive, isOwner]);
 
   const fileInputRef = useRef(null); 
   const [profileImage, setProfileImage] = useState(null); 
@@ -737,7 +739,6 @@ const loadRazorpayScript = () => {
   const [importForm, setImportForm] = useState({ csv_text: IMPORT_SAMPLE_CSV, dry_run: true });
   const [importSubmitting, setImportSubmitting] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  const [connectingGateway, setConnectingGateway] = useState(false);
   const [disconnectingGateway, setDisconnectingGateway] = useState(false);
   const [showLinkedAccountForm, setShowLinkedAccountForm] = useState(false);
   const [linkedAccountSaving, setLinkedAccountSaving] = useState(false);
@@ -902,10 +903,6 @@ const loadRazorpayScript = () => {
     ),
     [billingPreviewGymData, canUseServerEffectiveLimits, effectiveLimits, gymData.current_plan, normalizedBillingCatalog]
   );
-  const billingCheckoutPlan = useMemo(
-    () => normalizedBillingCatalog.plans[billingCheckout.planId] || null,
-    [billingCheckout.planId, normalizedBillingCatalog]
-  );
   const billingCheckoutPlanCard = useMemo(
     () => planCards.find((plan) => plan.id === billingCheckout.planId) || null,
     [billingCheckout.planId, planCards]
@@ -1016,9 +1013,10 @@ const loadRazorpayScript = () => {
 
   const fetchSettings = useCallback(async () => {
     try {
-      const res = await axios.get('/api/settings', {
-        ...headers,
-        timeout: SETTINGS_BOOTSTRAP_TIMEOUT_MS,
+      const res = await getSettingsEntryData({
+        token,
+        currentUser,
+        branchScopeValue,
       });
 
       if (res.data.account) {
@@ -1127,7 +1125,7 @@ const loadRazorpayScript = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [applyEffectiveLimitsPayload, headers, toast]);
+  }, [applyEffectiveLimitsPayload, branchScopeValue, currentUser, toast, token]);
 
   useEffect(() => {
     if (!token || !isActive || !isOwner) {
@@ -2114,7 +2112,7 @@ const loadRazorpayScript = () => {
 
   const deleteStaffTask = async (task) => {
     if (!task?.id) return;
-    if (!window.confirm(`Delete the task \"${task.title || 'Untitled task'}\"?`)) {
+    if (!window.confirm(`Delete the task "${task.title || 'Untitled task'}"?`)) {
       return;
     }
 
@@ -2724,7 +2722,16 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
         headers: { 'x-auth-token': token, 'Content-Type': 'multipart/form-data' }
       });
       await axios.put('/api/settings/gym', {
-        ...gymData,
+        name: gymData.name,
+        phone: gymData.phone,
+        email: gymData.email,
+        address: gymData.address,
+        tax_id: gymData.tax_id,
+        website: gymData.website,
+        support_whatsapp: gymData.support_whatsapp,
+        support_window: gymData.support_window,
+        support_sla: gymData.support_sla,
+        support_about_mission: gymData.support_about_mission,
         gym_logo: gymData.gym_logo || '',
         owner_signature: gymData.owner_signature || '',
       }, headers);
@@ -2787,11 +2794,17 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
     if (deleteConfirm !== 'DELETE') {
       return toast('Please type DELETE to confirm', 'error');
     }
+    if (!deleteCurrentPassword) {
+      return toast('Enter your current password to confirm deletion', 'error');
+    }
     try {
-      await axios.delete('/api/settings/nuke', headers);
+      await axios.delete('/api/settings/nuke', {
+        ...headers,
+        data: { current_password: deleteCurrentPassword },
+      });
       window.location.href = '/login'; 
-    } catch (_err) {
-      toast("Failed to delete account", "error");
+    } catch (err) {
+      toast(err?.response?.data?.error || 'Failed to delete account', 'error');
     }
   };
 
@@ -2868,7 +2881,7 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
             <ArrowLeft size={18} />
           </button>
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Settings</p>
+            <p className="gv-type-label text-slate-400">Settings</p>
             <h2 className="text-base font-black text-slate-900 truncate">{activeTabMeta.label}</h2>
           </div>
         </div>
@@ -2881,7 +2894,7 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
               
               <form onSubmit={handleCombinedSave} className="space-y-10 max-w-3xl">
                 <div className="space-y-6">
-                  <h3 className="text-xs font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2 border-b border-indigo-50 pb-3">
+                  <h3 className="gv-type-label text-indigo-500 flex items-center gap-2 border-b border-indigo-50 pb-3">
                     <User size={14} /> Personal Details
                   </h3>
                   <div className="flex items-center gap-6 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
@@ -2902,8 +2915,8 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
                     </div>
                   </div>
                   <div className="grid grid-cols-1 desktop:grid-cols-2 gap-5">
-                    <div><label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">Owner Name</label><div className="relative"><User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input required type="text" value={accountData.full_name} onChange={e => setAccountData({...accountData, full_name: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all" /></div></div>
-                    <div><label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">Login Email</label><div className="relative"><Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input required type="email" value={accountData.email} onChange={e => setAccountData({...accountData, email: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all" /></div></div>
+                    <div><label className="gv-type-label block text-slate-500 mb-2">Owner Name</label><div className="relative"><User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input required type="text" value={accountData.full_name} onChange={e => setAccountData({...accountData, full_name: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all" /></div></div>
+                    <div><label className="gv-type-label block text-slate-500 mb-2">Login Email</label><div className="relative"><Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input required type="email" value={accountData.email} onChange={e => setAccountData({...accountData, email: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all" /></div></div>
                     <div><label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">Personal Phone</label><div className="relative"><Smartphone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="+91 00000 00000" value={accountData.phone} onChange={e => setAccountData({...accountData, phone: e.target.value})} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 transition-all" /></div></div>
                     <div><label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">System Role</label><div className="relative"><ShieldCheck size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500" /><input disabled type="text" value="Super Administrator" className="w-full pl-11 pr-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-indigo-600 cursor-not-allowed" /></div></div>
                   </div>
@@ -2988,6 +3001,15 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
                   </button>
                 </div>
               </form>
+
+              <div className="mt-8 max-w-3xl border-t border-slate-200 pt-6">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Privacy &amp; Legal</h3>
+                <p className="mt-2 text-sm text-slate-500">Review how GymVault handles account and gym data, and the terms governing the service.</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <a href="/privacy" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700"><ShieldCheck size={16} /> Privacy Policy</a>
+                  <a href="/terms" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:border-indigo-300 hover:text-indigo-700"><FileText size={16} /> Terms of Service</a>
+                </div>
+              </div>
 
               {/* ── Branch & Location Management ── */}
               <div className="mt-10 space-y-6">
@@ -3645,8 +3667,8 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
                         key={plan.id}
                         className={`
                           gv-plan-card relative flex flex-col
-                          min-w-[85vw] max-w-[340px]
-                          lg:min-w-0 lg:max-w-none
+                          w-[min(85vw,340px)] min-w-[min(85vw,340px)] max-w-[340px]
+                          lg:w-auto lg:min-w-0 lg:max-w-none
                           flex-shrink-0 snap-center
                           p-5 rounded-[24px] transition-all duration-300
                           ${plan.test
@@ -3958,9 +3980,9 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
                               {integrationData.member_payments?.onboarding_status === 'CONNECTED' ? `Account: ${integrationData.member_payments.connected_account_id}` : 'Enter your Razorpay Route Account ID to connect. Members pay directly to your account and GymVault auto-collects its platform fee via Route.'}
                             </p>
                             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-wrap">
-                              <button type="button" onClick={handleConnectRazorpay} disabled={connectingGateway}
-                                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-black text-sm hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
-                                {connectingGateway ? <><RefreshCw size={14} className="animate-spin" />Connecting...</> : integrationData.member_payments?.onboarding_status === 'CONNECTED' ? 'Update Account ID' : 'Enter Account ID'}
+                              <button type="button" onClick={handleConnectRazorpay}
+                                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-black text-sm hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                {integrationData.member_payments?.onboarding_status === 'CONNECTED' ? 'Update Account ID' : 'Enter Account ID'}
                               </button>
                               {integrationData.member_payments?.onboarding_status === 'CONNECTED' && (
                                 <button type="button" onClick={handleDisconnectRazorpay} disabled={disconnectingGateway}
@@ -5078,7 +5100,9 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
                 <div className="flex flex-col gap-3 max-w-sm">
                   <label className="text-xs font-bold text-rose-800 uppercase">Type "DELETE" to confirm</label>
                   <input type="text" value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)} placeholder="DELETE" className="px-4 py-3 bg-white border border-rose-200 rounded-xl text-sm font-black text-rose-900 focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all" />
-                  <button onClick={handleDeleteGym} disabled={deleteConfirm !== 'DELETE'} className="flex items-center justify-center gap-2 bg-rose-600 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-rose-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={16} /> Permanently Delete Gym</button>
+                  <label className="text-xs font-bold text-rose-800 uppercase" htmlFor="delete-current-password">Current password</label>
+                  <input id="delete-current-password" type="password" autoComplete="current-password" value={deleteCurrentPassword} onChange={e => setDeleteCurrentPassword(e.target.value)} className="px-4 py-3 bg-white border border-rose-200 rounded-xl text-sm font-bold text-rose-900 focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all" />
+                  <button onClick={handleDeleteGym} disabled={deleteConfirm !== 'DELETE' || !deleteCurrentPassword} className="flex items-center justify-center gap-2 bg-rose-600 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-rose-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={16} /> Permanently Delete Gym</button>
                 </div>
               </div>
             </div>

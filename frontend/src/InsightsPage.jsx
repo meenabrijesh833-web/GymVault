@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import axios from 'axios';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   AreaChart, Area,
@@ -16,6 +15,7 @@ import useCountUp from './utils/useCountUp';
 import { buildReminderPreviewDialog, getReminderPreviewBlockReason, previewWhatsAppReminders, sendWhatsAppReminders, summarizeReminderResult } from './utils/whatsappReminders';
 import { getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
 import PageLoader from './PageLoader';
+import { getAttendancePeakHoursData, getInsightsFranchiseData, getInsightsOverviewData } from './utils/pageDataPrefetch';
 
 const EMPTY_ANALYTICS = {
   revenue: {
@@ -96,8 +96,8 @@ const KPICard = (props) => {
         ) : null}
       </div>
       <div>
-        <p className="text-slate-400 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
-        <h3 className="text-2xl font-black text-slate-900 dark:text-white">{displayVal}</h3>
+        <p className="gv-type-label text-slate-400 dark:text-slate-400 mb-1">{title}</p>
+        <h3 className="gv-type-metric text-slate-900 dark:text-white">{displayVal}</h3>
       </div>
     </div>
   );
@@ -290,12 +290,11 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
 
     setLoading(true);
     try {
-      const params = { range };
-      if (branchScopeValue) params.branch_id = branchScopeValue;
-
-      const res = await axios.get('/api/insights/overview', {
-        headers: { 'x-auth-token': token },
-        params,
+      const res = await getInsightsOverviewData({
+        token,
+        currentUser,
+        branchScopeValue,
+        range,
       });
       const normalized = normalizeInsightsPayload(res.data || {});
       cacheRef.current.set(cacheKey, normalized);
@@ -306,7 +305,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
     } finally {
       setLoading(false);
     }
-  }, [branchScopeValue, token, toast]);
+  }, [branchScopeValue, currentUser, token, toast]);
 
   const fetchFranchiseInsights = useCallback(async (range, allowCache = true) => {
     if (!token || !canViewFranchiseInsights) return;
@@ -320,10 +319,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
 
     setFranchiseLoading(true);
     try {
-      const res = await axios.get('/api/insights/franchise', {
-        headers: { 'x-auth-token': token },
-        params: { range },
-      });
+      const res = await getInsightsFranchiseData({ token, currentUser, range });
       const normalized = normalizeFranchisePayload(res.data || {});
       cacheRef.current.set(cacheKey, normalized);
       setFranchiseAnalytics(normalized);
@@ -333,7 +329,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
     } finally {
       setFranchiseLoading(false);
     }
-  }, [canViewFranchiseInsights, token, toast]);
+  }, [canViewFranchiseInsights, currentUser, token, toast]);
 
   useEffect(() => {
     if (!token || !isActive) return;
@@ -353,12 +349,12 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
 
   useEffect(() => {
     if (!token) return;
-    const params = insightsPeakDays === 'today'
-      ? { today: true }
-      : { days: insightsPeakDays };
-    if (branchScopeValue) params.branch_id = branchScopeValue;
-
-    axios.get('/api/attendance/peak-hours', { headers: { 'x-auth-token': token }, params })
+    getAttendancePeakHoursData({
+      token,
+      currentUser,
+      branchScopeValue,
+      ...(insightsPeakDays === 'today' ? { today: true } : { days: insightsPeakDays }),
+    })
       .then((res) => {
         const rows = Array.isArray(res.data) ? res.data : [];
         setInsightsPeakHours(rows.map((item) => ({
@@ -367,7 +363,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
         })));
       })
       .catch(() => {});
-  }, [token, branchScopeValue, insightsPeakDays, isActive]);
+  }, [token, currentUser, branchScopeValue, insightsPeakDays, isActive]);
 
   const hasRevenueGraph = analytics.revenue.graphData.some((item) => Number(item.revenue || 0) > 0);
   const hasPeakHourData = insightsPeakHours.some((item) => Number(item.count || 0) > 0);
@@ -377,7 +373,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
   if (loading) return <PageLoader className="min-h-[56vh]" />;
 
   return (
-    <div className="min-h-full p-0 space-y-8 font-inter text-slate-900">
+    <div className="min-h-full p-0 space-y-8 font-sans text-slate-900">
       <div className="space-y-3">
         <div className="relative sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-4">
           <div className="min-w-0 sm:pr-1">
@@ -385,20 +381,20 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
           </div>
           <p className="mt-2 text-slate-500 font-medium sm:col-span-2 sm:mt-0">See how your gym is doing — payments, members, and attendance.</p>
         </div>
-        <div className="flex items-center gap-3 bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-fit">
+        <div className="flex w-full items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:w-fit sm:gap-3">
             {['1M', '3M', '6M', '1Y'].map((range) => (
               <button
                 key={range}
                 onClick={() => setDateRange(range)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${dateRange === range ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
+                className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-all sm:flex-none sm:px-4 ${dateRange === range ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
               >
                 {range}
               </button>
             ))}
-            <div className="w-[1px] h-6 bg-slate-200 mx-1" />
+            <div className="h-6 w-px shrink-0 bg-slate-200 sm:mx-1" />
             <button
               onClick={handleDownloadReport}
-              className="px-3 py-2 text-slate-400 hover:text-slate-900 transition-colors"
+              className="shrink-0 px-2 py-2 text-slate-400 transition-colors hover:text-slate-900 sm:px-3"
               title="Download PDF Report"
             >
               <Download size={18} />
@@ -416,7 +412,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
           </div>
 
           <div className="bg-white backdrop-blur-sm rounded-[20px] border border-slate-200/80 p-5 space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Franchise Summary</p>
+            <p className="gv-type-label text-indigo-500">Franchise Summary</p>
             <div className="grid grid-cols-1 desktop:grid-cols-2 gap-4 text-sm text-slate-600 font-medium leading-relaxed">
               <div className="space-y-2">
                 <p>
@@ -451,7 +447,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
           </div>
 
           <div className="bg-white backdrop-blur-sm rounded-[20px] border border-slate-200/80 p-5 space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Summary</p>
+            <p className="gv-type-label text-indigo-500">Summary</p>
             <div className="grid grid-cols-1 desktop:grid-cols-2 gap-4 text-sm text-slate-600 font-medium leading-relaxed">
               <div className="space-y-2">
                 <p>
@@ -491,7 +487,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
         </>
       )}
 
-      <div className="border-b border-slate-200 flex gap-8 overflow-x-auto">
+      <div className="w-full max-w-full border-b border-slate-200 flex gap-6 sm:gap-8 overflow-x-auto overscroll-x-contain snap-x snap-mandatory scroll-px-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {[
           { id: 'revenue', label: 'Money', icon: TrendingUp },
           { id: 'attendance', label: 'Attendance', icon: Users },
@@ -502,7 +498,7 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`pb-4 flex items-center gap-2 text-sm font-bold transition-all border-b-2 whitespace-nowrap active:scale-95 ${activeTab === tab.id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-200'}`}
+            className={`pb-4 flex shrink-0 snap-start items-center gap-2 text-sm font-bold transition-all border-b-2 whitespace-nowrap active:scale-95 ${activeTab === tab.id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-200'}`}
           >
             <tab.icon size={16} />
             {tab.label}
@@ -515,23 +511,23 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
           <div className="space-y-6">
             <div className="grid grid-cols-1 desktop:grid-cols-3 gap-4">
               <Card className="p-5 border-l-4 border-l-blue-500">
-                <p className="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1.5"><Target size={12} /> Average Per Member (30D)</p>
+                <p className="gv-type-label text-slate-400 mb-1 flex items-center gap-1.5"><Target size={12} /> Average Per Member (30D)</p>
                 <div className="flex items-end gap-2">
-                  <h3 className="text-2xl font-black text-slate-900">₹{analytics.revenue.arpu.toLocaleString()}</h3>
+                  <h3 className="gv-type-metric text-slate-900">₹{analytics.revenue.arpu.toLocaleString()}</h3>
                   <span className="text-sm font-bold text-slate-400 mb-1">/ active member</span>
                 </div>
               </Card>
               <Card className="p-5 border-l-4 border-l-rose-500">
-                <p className="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1.5"><TrendingUp size={12} className="rotate-180" /> Money Lost From Expired Plans</p>
+                <p className="gv-type-label text-slate-400 mb-1 flex items-center gap-1.5"><TrendingUp size={12} className="rotate-180" /> Money Lost From Expired Plans</p>
                 <div className="flex items-end gap-2">
-                  <h3 className="text-2xl font-black text-rose-600">₹{analytics.revenue.lostRevenue.toLocaleString()}</h3>
+                  <h3 className="gv-type-metric text-rose-600">₹{analytics.revenue.lostRevenue.toLocaleString()}</h3>
                   <span className="text-sm font-bold text-slate-400 mb-1">from expired memberships</span>
                 </div>
               </Card>
               <Card className="p-5 border-l-4 border-l-emerald-500">
-                <p className="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1.5"><ShieldCheck size={12} /> Expected Next Month</p>
+                <p className="gv-type-label text-slate-400 mb-1 flex items-center gap-1.5"><ShieldCheck size={12} /> Expected Next Month</p>
                 <div className="flex items-end gap-2">
-                  <h3 className="text-2xl font-black text-emerald-600">₹{(analytics.health.active * analytics.revenue.arpu).toLocaleString()}</h3>
+                  <h3 className="gv-type-metric text-emerald-600">₹{(analytics.health.active * analytics.revenue.arpu).toLocaleString()}</h3>
                   <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded mb-1 border border-emerald-100">Based on active members</span>
                 </div>
               </Card>

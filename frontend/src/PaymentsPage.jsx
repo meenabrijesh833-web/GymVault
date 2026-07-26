@@ -15,6 +15,7 @@ import { buildPayrollPayoutReference, buildPayrollUpiUri, copyPayrollText, openP
 import { buildReminderPreviewDialog, getReminderPreviewBlockReason, previewWhatsAppReminders, sendWhatsAppReminders, summarizeReminderResult } from './utils/whatsappReminders';
 import PaginationControls from './components/PaginationControls';
 import { getBranchLabel, getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
+import { getPaymentsEntryData, getPaymentsFinanceOverviewData, getPaymentsLedgerData } from './utils/pageDataPrefetch';
 
 const extractArray = (value, keys = []) => {
   if (Array.isArray(value)) return value;
@@ -523,20 +524,19 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
 
   const fetchFinanceOverview = useCallback(async () => {
     try {
-      const res = await axios.get('/api/finance/overview', {
-        headers: { 'x-auth-token': token },
-        params: {
-          period: dateRange,
-          from: financeOverviewParams.from,
-          to: financeOverviewParams.to,
-          ...branchParams,
-        },
+      const res = await getPaymentsFinanceOverviewData({
+        token,
+        currentUser,
+        branchScopeValue,
+        period: dateRange,
+        from: financeOverviewParams.from,
+        to: financeOverviewParams.to,
       });
       setFinanceOverview(res.data || null);
     } catch {
       setFinanceOverview(null);
     }
-  }, [branchParams, dateRange, financeOverviewParams.from, financeOverviewParams.to, token]);
+  }, [branchScopeValue, currentUser, dateRange, financeOverviewParams.from, financeOverviewParams.to, token]);
 
   useEffect(() => {
     if (financeTab === 'expenses') {
@@ -1045,7 +1045,7 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
       return;
     }
 
-    if (payrollSettlementForm.payout_channel === 'BANK_TRANSFER' && !Boolean(payrollSettlementDestination?.has_bank_account)) {
+    if (payrollSettlementForm.payout_channel === 'BANK_TRANSFER' && !payrollSettlementDestination?.has_bank_account) {
       toast?.('Save the staff bank details in the payroll page before using the bank transfer route.', 'warning');
       return;
     }
@@ -1198,18 +1198,16 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
     ledgerRequestIdRef.current = requestId;
 
     try {
-      const res = await axios.get('/api/payments', {
-        headers: { 'x-auth-token': token },
-        params: {
-          paginate: true,
-          page: ledgerPagination.page,
-          limit: ledgerPagination.limit,
-          search: normalizedSearchTerm || undefined,
-          filter: activeFilter,
-          from: financeOverviewParams.from,
-          to: financeOverviewParams.to,
-          ...branchParams,
-        },
+      const res = await getPaymentsLedgerData({
+        token,
+        currentUser,
+        branchScopeValue,
+        page: ledgerPagination.page,
+        limit: ledgerPagination.limit,
+        search: normalizedSearchTerm || undefined,
+        filter: activeFilter,
+        from: financeOverviewParams.from,
+        to: financeOverviewParams.to,
       });
 
       const ledgerData = extractArray(res.data, ['payments', 'rows', 'items']).map((payment) => ({
@@ -1234,18 +1232,18 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
       reportClientError('Payments load ledger', err);
       setLedgerPayments([]);
     }
-  }, [activeFilter, branchParams, financeOverviewParams.from, financeOverviewParams.to, ledgerPagination.limit, ledgerPagination.page, normalizedSearchTerm, token]);
+  }, [activeFilter, branchScopeValue, currentUser, financeOverviewParams.from, financeOverviewParams.to, ledgerPagination.limit, ledgerPagination.page, normalizedSearchTerm, token]);
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const headers = { 'x-auth-token': token };
-      const [paymentsRes, statsRes, membersRes, plansRes] = await Promise.all([
-        axios.get('/api/payments', { headers, params: { from: financeOverviewParams.from, to: financeOverviewParams.to, compact: true, ...branchParams } }),
-        axios.get('/api/payments/stats', { headers, params: { from: financeOverviewParams.from, to: financeOverviewParams.to, ...branchParams } }),
-        axios.get('/api/members/options', { headers, params: { limit: 20, ...branchParams } }),
-        axios.get('/api/plans', { headers })
-      ]);
+      const [paymentsRes, statsRes, membersRes, plansRes] = await getPaymentsEntryData({
+        token,
+        currentUser,
+        branchScopeValue,
+        from: financeOverviewParams.from,
+        to: financeOverviewParams.to,
+      });
 
       const paymentsData = extractArray(paymentsRes.data, ['payments', 'rows', 'items']).map((payment) => ({
         ...payment,
@@ -1263,13 +1261,15 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
       reportClientError('Payments load data', err);
       setLoading(false);
     }
-  }, [branchParams, financeOverviewParams.from, financeOverviewParams.to, token]);
+  }, [branchScopeValue, currentUser, financeOverviewParams.from, financeOverviewParams.to, token]);
 
   const refreshAllData = useCallback(async () => {
     await Promise.all([fetchData(), loadLedger()]);
   }, [fetchData, loadLedger]);
 
-  fetchDataRef.current = refreshAllData;
+  useEffect(() => {
+    fetchDataRef.current = refreshAllData;
+  }, [refreshAllData]);
 
   useEffect(() => {
     if (!token || !isActive) return;
@@ -1536,13 +1536,15 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
     }
   }, [branchScopeValue, dueFormData.amount, dueFormData.notes, dueModalPayment, dueRazorpayContext, settleDueLocally, toast, token]);
 
-  checkDueRazorpayStatusRef.current = checkDueRazorpayStatus;
-  dueResumeStateRef.current = {
-    dueModalPaymentId: dueModalPayment?.id || null,
-    paymentMode: dueFormData.payment_mode,
-    dueOnlineMode,
-    paymentLinkId: dueRazorpayContext?.payment_link?.id || '',
-  };
+  useEffect(() => {
+    checkDueRazorpayStatusRef.current = checkDueRazorpayStatus;
+    dueResumeStateRef.current = {
+      dueModalPaymentId: dueModalPayment?.id || null,
+      paymentMode: dueFormData.payment_mode,
+      dueOnlineMode,
+      paymentLinkId: dueRazorpayContext?.payment_link?.id || '',
+    };
+  }, [checkDueRazorpayStatus, dueFormData.payment_mode, dueModalPayment?.id, dueOnlineMode, dueRazorpayContext?.payment_link?.id]);
 
   useEffect(() => {
     if (!token || !isActive) return undefined;
@@ -1941,7 +1943,7 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
             {[{ key: 'collections', label: 'Collections' }, { key: 'expenses', label: 'Expenses' }, { key: 'payroll', label: 'Payroll' }, { key: 'pos', label: 'POS' }]
               .filter((tab) => tab.key !== 'pos' || canAccessPos)
               .map(t => (
-              <button key={t.key} onClick={() => setFinanceTab(t.key)} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${financeTab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t.label}</button>
+              <button key={t.key} onClick={() => setFinanceTab(t.key)} className={`gv-type-control px-3 py-1.5 rounded-lg transition-all ${financeTab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t.label}</button>
             ))}
           </div>
           <div className="grid grid-cols-2 sm:flex gap-2.5 w-full sm:w-auto">
@@ -1964,7 +1966,7 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
       {/* DATE RANGE FILTER */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mr-1 shrink-0">Period:</span>
+          <span className="gv-type-label text-slate-400 mr-1 shrink-0">Period:</span>
           {[
             { key: '30d', label: '30 Days' },
             { key: 'all', label: 'All Time' },
@@ -1973,7 +1975,7 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
             <button
               key={rangeOption.key}
               onClick={() => setDateRange(rangeOption.key)}
-              className={`px-3 py-2 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap ${dateRange === rangeOption.key ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 border border-slate-200 hover:border-slate-300'}`}
+              className={`gv-type-control px-3 py-2 rounded-lg transition-all whitespace-nowrap ${dateRange === rangeOption.key ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 border border-slate-200 hover:border-slate-300'}`}
             >
               {rangeOption.label}
             </button>
@@ -2029,9 +2031,9 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
             style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)', borderColor: 'rgba(16,185,129,0.15)', boxShadow: '0 4px 20px rgba(16,185,129,0.08)', opacity: 0, animation: 'payCardIn 0.5s cubic-bezier(0.16,1,0.3,1) 120ms forwards' }}>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-emerald-700/70 text-[10px] font-black uppercase tracking-widest mb-3">{dateRange === 'all' ? 'Total Revenue' : `Revenue (${getDateRangeLabel(dateRange)})`}</p>
-                  <h3 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">₹{animatedTotalRevenue.toLocaleString()}</h3>
-                  <p className="text-emerald-600 text-xs font-bold mt-1.5">{dateRange === 'all' ? 'All time earnings' : 'Filtered period'}</p>
+                  <p className="gv-type-label text-emerald-700/70 mb-3">{dateRange === 'all' ? 'Total Revenue' : `Revenue (${getDateRangeLabel(dateRange)})`}</p>
+                  <h3 className="gv-type-metric gv-type-metric--lg text-slate-900">₹{animatedTotalRevenue.toLocaleString()}</h3>
+                  <p className="gv-type-caption text-emerald-600 mt-1.5">{dateRange === 'all' ? 'All time earnings' : 'Filtered period'}</p>
                 </div>
                 <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0" style={{ background: 'rgba(16,185,129,0.12)' }}>
                   <DollarSign size={22} className="text-emerald-600" />
@@ -2042,9 +2044,9 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
             style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%)', borderColor: 'rgba(59,130,246,0.15)', boxShadow: '0 4px 20px rgba(59,130,246,0.08)', opacity: 0, animation: 'payCardIn 0.5s cubic-bezier(0.16,1,0.3,1) 210ms forwards' }}>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-blue-700/70 text-[10px] font-black uppercase tracking-widest mb-3">Collected Today</p>
-                  <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">₹{animatedTodayRevenue.toLocaleString()}</h3>
-                  <p className="text-blue-600 text-xs font-bold mt-1.5">Today's collection</p>
+                  <p className="gv-type-label text-blue-700/70 mb-3">Collected Today</p>
+                  <h3 className="gv-type-metric text-slate-900">₹{animatedTodayRevenue.toLocaleString()}</h3>
+                  <p className="gv-type-caption text-blue-600 mt-1.5">Today's collection</p>
                 </div>
                 <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0" style={{ background: 'rgba(59,130,246,0.12)' }}>
                   <Clock size={22} className="text-blue-600" />
@@ -2055,9 +2057,9 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
             style={{ background: 'linear-gradient(135deg, #fff7ed 0%, #fef9f0 100%)', borderColor: 'rgba(249,115,22,0.15)', boxShadow: '0 4px 20px rgba(249,115,22,0.08)', opacity: 0, animation: 'payCardIn 0.5s cubic-bezier(0.16,1,0.3,1) 300ms forwards' }}>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 pr-2">
-                  <p className="text-orange-700/70 text-[10px] font-black uppercase tracking-widest mb-3">Pending Dues</p>
-                  <h3 className="text-2xl sm:text-3xl font-black text-orange-500 tracking-tight">₹{animatedPendingDues.toLocaleString()}</h3>
-                  <p className="text-orange-500 text-xs font-bold mt-1.5">Awaiting payment</p>
+                  <p className="gv-type-label text-orange-700/70 mb-3">Pending Dues</p>
+                  <h3 className="gv-type-metric text-orange-500">₹{animatedPendingDues.toLocaleString()}</h3>
+                  <p className="gv-type-caption text-orange-500 mt-1.5">Awaiting payment</p>
                 </div>
                 <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0" style={{ background: 'rgba(249,115,22,0.12)' }}>
                   <AlertCircle size={22} className="text-orange-600" />
@@ -2305,11 +2307,6 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
           {/* ── Expense Summary + POS Performance ── */}
           {(expenses.length > 0 || posAnalytics) && (() => {
             const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
-            const posPurchaseTotal = expenses.filter(e => e.category === 'POS Purchase').reduce((sum, e) => sum + Number(e.amount || 0), 0);
-            const operationalTotal = totalExpenses - posPurchaseTotal;
-            const categoryBreakdown = {};
-            expenses.forEach(e => { const cat = e.category || 'Other'; categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + Number(e.amount || 0); });
-            const topCategories = Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]).slice(0, 5);
             return (
               <div className="space-y-4">
                 {/* Expense overview card */}

@@ -288,21 +288,20 @@ function HelpSupportPage({ appRuntime }) {
     const content = String(presetMessage || chatInput).trim();
     if (!content || chatBusy) return;
 
-    const userMessage = {
-      id: `u-${Date.now()}`,
+    setChatMessages((prev) => [...prev, {
+      id: `u-${prev.length + 1}`,
       role: 'user',
       text: content,
       meta: null,
-    };
-    setChatMessages((prev) => [...prev, userMessage]);
+    }]);
     if (!presetMessage) setChatInput('');
     setChatBusy(true);
 
     try {
       const res = await axios.post('/api/support/chatbot', { message: content }, headers);
       const botPayload = res.data?.answer ? res.data : fallbackAssistantReply(content);
-      const botMessage = {
-        id: `a-${Date.now()}`,
+      setChatMessages((prev) => [...prev, {
+        id: `a-${prev.length + 1}`,
         role: 'assistant',
         text: botPayload.answer || 'I could not understand that clearly. Please share more details or raise a ticket.',
         meta: {
@@ -311,14 +310,13 @@ function HelpSupportPage({ appRuntime }) {
           suggested_subject: botPayload.suggested_subject || 'Support assistance needed',
           actions: Array.isArray(botPayload.actions) ? botPayload.actions : [],
         },
-      };
-      setChatMessages((prev) => [...prev, botMessage]);
+      }]);
     } catch (_err) {
       const fallback = fallbackAssistantReply(content);
       setChatMessages((prev) => ([
         ...prev,
         {
-          id: `a-${Date.now()}`,
+          id: `a-${prev.length + 1}`,
           role: 'assistant',
           text: fallback.answer,
           meta: {

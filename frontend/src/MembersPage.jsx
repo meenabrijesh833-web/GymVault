@@ -15,6 +15,7 @@ import PageLoader from './PageLoader';
 import { reportClientError } from './utils/clientErrorReporter';
 import PaginationControls from './components/PaginationControls';
 import { getBranchLabel, getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
+import { getMembersListData, getMembersSummaryData } from './utils/memberDataPrefetch';
 
 const AVATAR_GRADIENTS = [
   'from-violet-500 to-purple-600',
@@ -294,6 +295,15 @@ const hasPermission = (user, permission) => {
 
 const MEMBER_CREATE_STAFF_ROLES = new Set(['MANAGER', 'RECEPTION', 'TRAINER', 'WORKER', 'ACCOUNTANT', 'STAFF']);
 
+const notifyDashboardDataChanged = () => {
+  window.dispatchEvent(new CustomEvent('gymvault:data-changed', {
+    detail: {
+      source: 'members',
+      at: Date.now(),
+    },
+  }));
+};
+
 const normalizeMemberRecord = (member) => {
   const normalized = {
     ...member,
@@ -351,6 +361,29 @@ const getWholeDayDiffFromDate = (value) => {
       - Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()))
       / (1000 * 60 * 60 * 24)
   );
+};
+
+const getStatusInfo = (member) => {
+  if (String(member?.membership_status || '').toUpperCase() === 'FROZEN') return { label: 'FROZEN', color: 'bg-cyan-400', text: 'text-cyan-500' };
+  if (member.membership_status === 'UNPAID' || !member.plan_name) return { label: 'UNPAID', color: 'bg-slate-300', text: 'text-slate-400' };
+  if (member.days_left <= 0) return { label: 'EXPIRED', color: 'bg-rose-500', text: 'text-rose-500' };
+  if (member.days_left <= 7) return { label: 'EXPIRING SOON', color: 'bg-orange-500', text: 'text-orange-500' };
+
+  const latestPaymentDate = getLatestPaymentDate(member);
+  const activationReference = latestPaymentDate || member.joining_date;
+  const today = new Date();
+  const effectiveVisitSource = getEffectiveVisitSource(member);
+  const lastVisit = effectiveVisitSource ? new Date(effectiveVisitSource) : null;
+  const activationDate = activationReference ? new Date(activationReference) : null;
+  const diffDays = lastVisit
+    ? Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(lastVisit.getFullYear(), lastVisit.getMonth(), lastVisit.getDate())) / (1000 * 60 * 60 * 24))
+    : 999;
+  const activationAgeDays = activationDate
+    ? Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(activationDate.getFullYear(), activationDate.getMonth(), activationDate.getDate())) / (1000 * 60 * 60 * 24))
+    : 999;
+  if (activationAgeDays <= 14) return { label: 'ACTIVE', color: 'bg-emerald-400', text: 'text-emerald-500' };
+  if (diffDays > 14) return { label: 'INACTIVE', color: 'bg-amber-400', text: 'text-amber-500' };
+  return { label: 'ACTIVE', color: 'bg-emerald-400', text: 'text-emerald-500' };
 };
 
 const SuccessModal = ({ memberName, onClose, onDownload }) => {
@@ -456,6 +489,9 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
   const [gymWhatsAppStarter, setGymWhatsAppStarter] = useState({ number: '', displayName: '', ready: false });
   const [gymWhatsAppStarterLoading, setGymWhatsAppStarterLoading] = useState(false);
   const [whatsappStarterAckMarker, setWhatsAppStarterAckMarker] = useState('');
+  const [addFile, setAddFile] = useState(null);
+  const [editFile, setEditFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
 
   const isExistingMemberOnboarding = String(addFormData.onboarding_mode || 'FRESH').toUpperCase() === 'EXISTING';
 
@@ -509,6 +545,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
   const selectedMemberRef = useRef(selectedMember);
   const showDetailsModalRef = useRef(showDetailsModal);
   const hasLoadedMembersRef = useRef(false);
+  const hasLoadedMemberSummaryRef = useRef(false);
   const membersRequestIdRef = useRef(0);
   const memberSummaryRequestIdRef = useRef(0);
   const resumeRefreshAtRef = useRef(0);
@@ -532,24 +569,12 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     showDetailsModalRef.current = showDetailsModal;
   }, [showDetailsModal]);
 
-  const [addFile, setAddFile] = useState(null);
-  const [editFile, setEditFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
   const canWriteMembers = hasPermission(currentUser, 'members:write');
   const canCreateMembers = canWriteMembers
     || hasPermission(currentUser, 'members:create')
     || MEMBER_CREATE_STAFF_ROLES.has(String(currentUser?.staff_role || '').toUpperCase());
   const canWritePayments = hasPermission(currentUser, 'payments:write');
   const canWriteAttendance = hasPermission(currentUser, 'attendance:write');
-
-  const notifyDashboardDataChanged = () => {
-    window.dispatchEvent(new CustomEvent('gymvault:data-changed', {
-      detail: {
-        source: 'members',
-        at: Date.now(),
-      },
-    }));
-  };
 
   const syncOnboardingForm = (member) => {
     setOnboardingForm({
@@ -985,7 +1010,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     }, 150);
   };
 
-  const closeActivateModal = () => {
+  const closeActivateModal = useCallback(() => {
     setShowActivateModal(false);
     setSelectedPlanId('');
     setActivationOnlineMode('RAZORPAY');
@@ -993,7 +1018,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     setActivationRazorpayContext(null);
     setActivationReference('');
     setActivatingMode('');
-  };
+  }, []);
 
   const handleCopyActivationDetail = async (value, successMessage) => {
     const copied = await copyCollectionText(value);
@@ -1004,7 +1029,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     toast?.('Copy failed on this device. Long-press and copy it manually.', 'warning');
   };
 
-  const finishActivationSuccess = async (plan, paymentId) => {
+  const finishActivationSuccess = useCallback(async (plan, paymentId) => {
     if (canWriteAttendance) {
       await axios.put(`/api/members/${selectedMember.id}/check-in`, {}, { headers: { 'x-auth-token': token } });
     }
@@ -1020,9 +1045,9 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     });
     closeActivateModal();
     setShowSuccessAnim(true);
-  };
+  }, [canWriteAttendance, closeActivateModal, gymReceiptInfo, selectedMember, token]);
 
-  const checkActivationRazorpayStatus = async (plan, { manual = false } = {}) => {
+  const checkActivationRazorpayStatus = useCallback(async (plan, { manual = false } = {}) => {
     const paymentLinkId = activationRazorpayContext?.payment_link?.id;
     if (!selectedMember?.id || !plan?.id || !paymentLinkId || activationRazorpayPollBusyRef.current) {
       return false;
@@ -1060,16 +1085,18 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     } finally {
       activationRazorpayPollBusyRef.current = false;
     }
-  };
+  }, [activationRazorpayContext?.payment_link?.id, finishActivationSuccess, selectedMember, toast, token]);
 
-  checkActivationRazorpayStatusRef.current = checkActivationRazorpayStatus;
-  activationResumeStateRef.current = {
-    showActivateModal,
-    activationOnlineMode,
-    paymentLinkId: activationRazorpayContext?.payment_link?.id || '',
-    selectedPlanId,
-    plans,
-  };
+  useEffect(() => {
+    checkActivationRazorpayStatusRef.current = checkActivationRazorpayStatus;
+    activationResumeStateRef.current = {
+      showActivateModal,
+      activationOnlineMode,
+      paymentLinkId: activationRazorpayContext?.payment_link?.id || '',
+      selectedPlanId,
+      plans,
+    };
+  }, [activationOnlineMode, activationRazorpayContext?.payment_link?.id, checkActivationRazorpayStatus, plans, selectedPlanId, showActivateModal]);
 
   useEffect(() => {
     if (!token || !isActive) return undefined;
@@ -1173,16 +1200,15 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     }
 
     try {
-      const res = await axios.get('/api/members', {
-        headers: { 'x-auth-token': token },
-        params: {
-          paginate: true,
-          page: membersPagination.page,
-          limit: membersPagination.limit,
-          search: debouncedSearch || undefined,
-          status: FILTER_TO_API_STATUS[filter] || 'ALL',
-          branch_id: branchScopeValue,
-        },
+      const res = await getMembersListData({
+        token,
+        currentUser,
+        branchScopeValue,
+        page: membersPagination.page,
+        limit: membersPagination.limit,
+        search: debouncedSearch,
+        status: FILTER_TO_API_STATUS[filter] || 'ALL',
+        useIntentCache: !hasLoadedMembersRef.current,
       });
 
       if (requestId !== membersRequestIdRef.current) {
@@ -1216,16 +1242,18 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
         setIsRefreshing(false);
       }
     }
-  }, [branchScopeValue, debouncedSearch, filter, membersPagination.limit, membersPagination.page, toast, token]);
+  }, [branchScopeValue, currentUser, debouncedSearch, filter, membersPagination.limit, membersPagination.page, toast, token]);
 
   const fetchMemberSummary = useCallback(async () => {
     const requestId = memberSummaryRequestIdRef.current + 1;
     memberSummaryRequestIdRef.current = requestId;
 
     try {
-      const res = await axios.get('/api/members/summary', {
-        headers: { 'x-auth-token': token },
-        params: { branch_id: branchScopeValue },
+      const res = await getMembersSummaryData({
+        token,
+        currentUser,
+        branchScopeValue,
+        useIntentCache: !hasLoadedMemberSummaryRef.current,
       });
       if (requestId !== memberSummaryRequestIdRef.current) {
         return;
@@ -1239,13 +1267,16 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
         unpaid: Number(res.data?.unpaid || 0),
         frozen: Number(res.data?.frozen || 0),
       });
+      hasLoadedMemberSummaryRef.current = true;
     } catch (err) {
       reportClientError('Members fetch summary', err);
     }
-  }, [branchScopeValue, token]);
+  }, [branchScopeValue, currentUser, token]);
 
-  fetchMembersRef.current = fetchMembers;
-  fetchMemberSummaryRef.current = fetchMemberSummary;
+  useEffect(() => {
+    fetchMembersRef.current = fetchMembers;
+    fetchMemberSummaryRef.current = fetchMemberSummary;
+  }, [fetchMemberSummary, fetchMembers]);
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -1359,7 +1390,6 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     const gymPhone = gym.phone || '';
     const taxId = gym.tax_id || '';
     const gymLogo = gym.gym_logo || null;
-    const ownerSignature = gym.owner_signature || null;
 
     const durationDays = Number(receiptData.durationDays || 30);
     const months = Math.max(1, Math.round(durationDays / 30));
@@ -1654,10 +1684,6 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     }
   };
 
-  const sendWhatsAppReminder = async (member) => {
-    await openReminderComposer(member);
-  };
-
   const handleCall = (phoneNumber) => window.open(`tel:${phoneNumber}`, '_self');
 
   const handleBulkReminder = async () => {
@@ -1809,31 +1835,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     });
   };
 
-  const getStatusInfo = (member) => {
-    if (String(member?.membership_status || '').toUpperCase() === 'FROZEN') return { label: 'FROZEN', color: 'bg-cyan-400', text: 'text-cyan-500' };
-    if (member.membership_status === 'UNPAID' || !member.plan_name) return { label: 'UNPAID', color: 'bg-slate-300', text: 'text-slate-400' };
-    if (member.days_left <= 0) return { label: 'EXPIRED', color: 'bg-rose-500', text: 'text-rose-500' };
-    // Expiring soon: 7-day window — highest priority, checked before inactivity
-    if (member.days_left <= 7) return { label: 'EXPIRING SOON', color: 'bg-orange-500', text: 'text-orange-500' };
-    // Fresh activations should not immediately look inactive just because no visit happened yet.
-    const latestPaymentDate = getLatestPaymentDate(member);
-    const activationReference = latestPaymentDate || member.joining_date;
-    const today = new Date();
-    const effectiveVisitSource = getEffectiveVisitSource(member);
-    const lastVisit = effectiveVisitSource ? new Date(effectiveVisitSource) : null;
-    const activationDate = activationReference ? new Date(activationReference) : null;
-    const diffDays = lastVisit
-      ? Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(lastVisit.getFullYear(), lastVisit.getMonth(), lastVisit.getDate())) / (1000 * 60 * 60 * 24))
-      : 999;
-    const activationAgeDays = activationDate
-      ? Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(activationDate.getFullYear(), activationDate.getMonth(), activationDate.getDate())) / (1000 * 60 * 60 * 24))
-      : 999;
-    if (activationAgeDays <= 14) return { label: 'ACTIVE', color: 'bg-emerald-400', text: 'text-emerald-500' };
-    if (diffDays > 14) return { label: 'INACTIVE', color: 'bg-amber-400', text: 'text-amber-500' };
-    return { label: 'ACTIVE', color: 'bg-emerald-400', text: 'text-emerald-500' };
-  };
-
-  const resolveReminderDefaultTemplateKey = (member, templates) => {
+  const resolveReminderDefaultTemplateKey = useCallback((member, templates) => {
     const normalizedTemplates = Array.isArray(templates) ? templates : [];
     const availableKeys = new Set(
       normalizedTemplates
@@ -1856,7 +1858,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
           : ['RENEWAL_REMINDER', 'PAYMENT_DUE', 'UNPAID', 'EXPIRING_SOON', 'EXPIRED'];
 
     return candidateKeys.find((templateKey) => availableKeys.has(templateKey)) || normalizedTemplates[0]?.template_key || '';
-  };
+  }, []);
 
   const closeReminderModal = useCallback(() => {
     setShowReminderModal(false);
@@ -2029,6 +2031,10 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     }
   };
 
+  const sendWhatsAppReminder = async (member) => {
+    await openReminderComposer(member);
+  };
+
   useEffect(() => {
     if (!showReminderModal || !reminderTargetMember?.id || reminderTemplates.length === 0) {
       return;
@@ -2043,7 +2049,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     if (fallbackTemplateKey) {
       setSelectedReminderTemplateKey(fallbackTemplateKey);
     }
-  }, [reminderTargetMember, reminderTemplates, selectedReminderTemplateKey, showReminderModal]);
+  }, [reminderTargetMember, reminderTemplates, resolveReminderDefaultTemplateKey, selectedReminderTemplateKey, showReminderModal]);
 
   useEffect(() => {
     if (!showReminderModal || !reminderTargetMember?.id || !selectedReminderTemplateKey) {
@@ -2336,7 +2342,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
         {[ { label: 'Total Members', count: counts.All, icon: Users, bg: 'bg-indigo-50', ic: 'text-indigo-600' }, { label: 'Active', count: counts.Active, icon: CheckCircle, bg: 'bg-emerald-50', ic: 'text-emerald-600' }, { label: 'Expired', count: counts.Expired, icon: Clock, bg: 'bg-rose-50', ic: 'text-rose-600' }, { label: 'Unpaid', count: counts.Unpaid, icon: AlertTriangle, bg: 'bg-amber-50', ic: 'text-amber-600' } ].map((card) => (
           <div key={card.label} className="bg-white backdrop-blur-sm rounded-2xl border border-slate-200/60 p-4 flex items-center gap-3" style={{ boxShadow: '0 2px 16px rgba(99,102,241,0.05), 0 1px 3px rgba(0,0,0,0.03)' }}>
             <div className={`w-10 h-10 rounded-xl ${card.bg} ${card.ic} flex items-center justify-center shrink-0`}><card.icon size={18} /></div>
-            <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-none mb-0.5">{card.label}</p><p className="text-2xl font-black text-slate-900 leading-none">{loading ? '—' : card.count}</p></div>
+            <div><p className="gv-type-label text-slate-400 mb-0.5">{card.label}</p><p className="gv-type-metric text-slate-900">{loading ? '—' : card.count}</p></div>
           </div>
         ))}
       </div>
@@ -2366,7 +2372,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
           <div className="w-full">
             <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-1.5" role="tablist" aria-label="Member status filters">
               {FILTER_TABS.map(({ key, label, active, inactive, badgeActive, badgeInactive }) => (
-                <button key={key} type="button" role="tab" aria-selected={filter === key} onClick={() => setFilter(key)} className={`h-10 sm:h-9 w-full sm:w-auto px-2 sm:px-3.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 sm:gap-1.5 text-center leading-tight whitespace-normal sm:whitespace-nowrap border border-transparent ${filter === key ? active : inactive}`}>
+                <button key={key} type="button" role="tab" aria-selected={filter === key} onClick={() => setFilter(key)} className={`gv-type-control h-10 sm:h-9 w-full sm:w-auto px-2 sm:px-3.5 rounded-xl transition-all flex items-center justify-center gap-1 sm:gap-1.5 text-center whitespace-normal sm:whitespace-nowrap border border-transparent ${filter === key ? active : inactive}`}>
                   <span>{label}</span>
                   <span className={`min-w-[18px] text-center text-[9px] px-1.5 py-0.5 rounded-full font-black ${filter === key ? badgeActive : badgeInactive}`}>{counts[key] ?? 0}</span>
                 </button>
@@ -3292,7 +3298,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
         <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setPreviewImage(null)}>
           <div className="relative animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
             <button className="absolute -top-16 left-1/2 -translate-x-1/2 text-white/40 hover:text-white flex flex-col items-center" onClick={() => setPreviewImage(null)}><X size={32} strokeWidth={1.5} /><span className="text-[9px] font-bold tracking-[0.2em] mt-1 uppercase">Close</span></button>
-            <div className="w-[300px] h-[300px] md:w-[380px] md:h-[380px] rounded-full border-[6px] border-white shadow-2xl overflow-hidden bg-slate-800"><img src={previewImage} alt="Profile" className="w-full h-full object-cover select-none" /></div>
+            <div className="w-[min(82vw,300px)] aspect-square md:w-[380px] rounded-full border-[6px] border-white shadow-2xl overflow-hidden bg-slate-800"><img src={previewImage} alt="Profile" className="w-full h-full object-cover select-none" /></div>
           </div>
         </div>
       )}

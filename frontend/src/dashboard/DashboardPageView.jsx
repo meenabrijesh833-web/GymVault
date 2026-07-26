@@ -391,7 +391,6 @@ const DashboardPageView = ({ controller, isActive = true }) => {
     navigateTo,
     payStats,
     setChartDays,
-    setup,
     todayCheckins,
   } = controller;
 
@@ -468,7 +467,7 @@ const DashboardPageView = ({ controller, isActive = true }) => {
   ];
 
   return (
-    <div className="min-h-full dashboard-content-safe font-inter relative">
+    <div className="min-h-full dashboard-content-safe font-sans relative">
       <DashboardAnimationStyles />
 
       {isWarmupRetrying && (

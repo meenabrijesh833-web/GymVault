@@ -868,28 +868,6 @@ function SuperAdminDashboard({ token, onLogout }) {
     });
   };
 
-  const updateBillingPlanCapability = (planId, capabilityKey, value) => {
-    setSystem((prev) => {
-      const billingConfig = normalizeFrontendBillingCatalog(prev.billing_config);
-      return {
-        ...prev,
-        billing_config: {
-          ...billingConfig,
-          plans: {
-            ...billingConfig.plans,
-            [planId]: {
-              ...billingConfig.plans[planId],
-              capabilities: {
-                ...(billingConfig.plans[planId]?.capabilities || {}),
-                [capabilityKey]: Boolean(value),
-              },
-            },
-          },
-        },
-      };
-    });
-  };
-
   const removeBillingPlan = (planId) => {
     if (planId !== 'test') {
       alert('Only the Test Drive plan can be removed from the live catalog. Basic, Growth, and Pro stay fixed.');
@@ -1177,7 +1155,7 @@ function SuperAdminDashboard({ token, onLogout }) {
   );
 
   return (
-    <div className="app-min-shell-height bg-[#050505] text-slate-200 font-['Inter'] p-6 lg:p-8" style={{ paddingTop: 'max(1.5rem, var(--safe-area-top))' }}>
+    <div className="app-min-shell-height bg-[#050505] text-slate-200 font-sans p-6 lg:p-8" style={{ paddingTop: 'max(1.5rem, var(--safe-area-top))' }}>
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
           <div>
@@ -1190,8 +1168,8 @@ function SuperAdminDashboard({ token, onLogout }) {
             <p className="text-slate-400 text-sm">Super Admin Global Overview & Controls</p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative w-72 max-w-[65vw]">
+          <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex sm:w-auto sm:flex-wrap">
+            <div className="relative min-w-0 w-full sm:w-72 sm:max-w-[65vw]">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 value={search}
@@ -1204,7 +1182,7 @@ function SuperAdminDashboard({ token, onLogout }) {
             </div>
             <button onClick={runGlobalSearch} className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">Search</button>
             <button aria-label="Refresh HQ data" onClick={loadAll} className="px-3 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5"><RefreshCw size={16} /></button>
-            <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-rose-500/10 hover:text-rose-400 text-slate-400 rounded-xl font-bold transition-all text-sm border border-white/10">
+            <button onClick={onLogout} className="col-span-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-rose-500/10 hover:text-rose-400 text-slate-400 rounded-xl font-bold transition-all text-sm border border-white/10 sm:col-auto">
               <LogOut size={16} /> Logout
             </button>
           </div>

@@ -160,7 +160,7 @@ const requestDataRefresh = (source) => {
 };
 
 const LeadsPage = ({ appRuntime, canManage = false }) => {
-  const { token, toast, showConfirm, navigateTo, currentUser, branchDirectory, defaultBranchId } = appRuntime;
+  const { token, toast, showConfirm, navigateTo, currentUser, defaultBranchId } = appRuntime;
   const operationsBranchId = appRuntime.operationsBranchId || currentUser?.branch_id || defaultBranchId;
   const branchScopeValue = getBranchRequestValue(operationsBranchId);
   const branchQueryParams = useMemo(() => (branchScopeValue ? { branch_id: branchScopeValue } : {}), [branchScopeValue]);

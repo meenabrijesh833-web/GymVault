@@ -25,6 +25,7 @@ const PORTAL_MODE_STORAGE_KEY = 'gymvault_last_portal_mode';
 const MEMBER_AUTO_RESTORE_STORAGE_KEY = 'gymvault_member_portal_restore';
 const MEMBER_CAMERA_PERMISSION_STORAGE_KEY = 'gymvault_member_camera_permission';
 const MEMBER_LOCATION_PERMISSION_STORAGE_KEY = 'gymvault_member_location_permission';
+const LOGIN_MODULE_LOADED_AT_MS = Date.now();
 
 const normalizeStoredPermissionState = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -454,6 +455,13 @@ function MemberPortalDashboard({ member, token, onSignOut, onSwitchGym, onMember
   const [locationPermissionState, setLocationPermissionState] = useState(() => readStoredPermissionState(MEMBER_LOCATION_PERMISSION_STORAGE_KEY));
   const [cameraPermissionHydrated, setCameraPermissionHydrated] = useState(false);
   const [cameraPermissionSessionGranted, setCameraPermissionSessionGranted] = useState(false);
+  const [currentTimeMs, setCurrentTimeMs] = useState(LOGIN_MODULE_LOADED_AT_MS);
+
+  useEffect(() => {
+    setCurrentTimeMs(Date.now());
+    const intervalId = window.setInterval(() => setCurrentTimeMs(Date.now()), 60000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const appleMobileDevice = useMemo(() => isAppleMobileDevice(), []);
   const standalonePortalApp = useMemo(() => isStandalonePortalApp(), []);
@@ -557,11 +565,6 @@ function MemberPortalDashboard({ member, token, onSignOut, onSwitchGym, onMember
         if (typeof status.addEventListener === 'function') {
           status.addEventListener('change', handleChange);
           cleanupFns.push(() => status.removeEventListener('change', handleChange));
-        } else {
-          status.onchange = handleChange;
-          cleanupFns.push(() => {
-            status.onchange = null;
-          });
         }
       } catch {
         // Ignore unsupported permission names/browsers.
@@ -883,15 +886,12 @@ function MemberPortalDashboard({ member, token, onSignOut, onSwitchGym, onMember
   const toDateStr = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  const todayStr = toDateStr(new Date());
-  const todayAttendance = attendance.find((entry) => String(entry.date).slice(0, 10) === todayStr);
-  const todayCheckins = Number(todayAttendance?.count || 0);
-  const checkedInToday = todayCheckins > 0;
+  const todayStr = toDateStr(new Date(currentTimeMs));
 
   const lastVisitLabel = attendance[0]?.date ? formatPortalDate(attendance[0].date) : 'No recent check-in';
 
   const last14 = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
+    const d = new Date(currentTimeMs);
     d.setDate(d.getDate() - (13 - i));
     return { date: toDateStr(d), day: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][d.getDay()], dayNum: d.getDate() };
   });
@@ -899,7 +899,7 @@ function MemberPortalDashboard({ member, token, onSignOut, onSwitchGym, onMember
   const attendedDates = new Set(attendance.map((entry) => String(entry.date).slice(0, 10)));
 
   const daysLeft = member.membership_end
-    ? Math.max(0, Math.ceil((new Date(member.membership_end) - Date.now()) / 86400000))
+    ? Math.max(0, Math.ceil((new Date(member.membership_end) - currentTimeMs) / 86400000))
     : null;
   const totalDays = (member.membership_start && member.membership_end)
     ? Math.max(1, Math.ceil((new Date(member.membership_end) - new Date(member.membership_start)) / 86400000))
@@ -908,7 +908,7 @@ function MemberPortalDashboard({ member, token, onSignOut, onSwitchGym, onMember
     ? Math.max(0, Math.min(100, Math.round(((totalDays - daysLeft) / totalDays) * 100)))
     : null;
 
-  const now = new Date();
+  const now = new Date(currentTimeMs);
   const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const thisMonthCount = attendance.filter((entry) => String(entry.date).startsWith(currentYM)).length;
 
@@ -921,7 +921,7 @@ function MemberPortalDashboard({ member, token, onSignOut, onSwitchGym, onMember
   const lastVisitSubLabel = lastVisitLabel === 'No recent check-in' ? 'No attendance recorded yet' : 'Latest attendance recorded';
 
   return (
-    <div className="app-min-shell-height font-['Inter'] overflow-y-auto"
+    <div className="app-min-shell-height font-sans overflow-y-auto"
       style={{ background: 'linear-gradient(160deg, #060b14 0%, #090c18 100%)', touchAction: 'pan-y', overscrollBehaviorX: 'none' }}>
 
       {/* Ambient blobs */}
@@ -1897,7 +1897,7 @@ export default function LoginPage({ setToken, onShowSignup, authErrorCode = '', 
 
   if (memberSessionRestorePending && tab === 'MEMBER' && !memberData && !memberToken) {
     return (
-      <div className="app-min-shell-height flex items-center justify-center font-['Inter'] px-6"
+      <div className="app-min-shell-height flex items-center justify-center font-sans px-6"
         style={{ background: 'linear-gradient(170deg, #0c1120 0%, #090c18 100%)' }}>
         <div className="w-full max-w-sm rounded-[30px] p-7 text-center"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -1930,7 +1930,7 @@ export default function LoginPage({ setToken, onShowSignup, authErrorCode = '', 
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="app-min-shell-height flex font-['Inter'] overflow-x-hidden lg:overflow-hidden" style={{ background: '#060b14' }}>
+    <div className="app-min-shell-height flex font-sans overflow-x-hidden lg:overflow-hidden" style={{ background: '#060b14' }}>
 
       {/* ════════════════════ LEFT PANEL — desktop only ═══════════════════════ */}
       <div

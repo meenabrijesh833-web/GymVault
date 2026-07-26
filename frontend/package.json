@@ -9,8 +9,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:prefetch": "node scripts/check-intent-prefetch.mjs",
+    "check:render-profiler": "node scripts/check-render-profiler.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
+  },
+  "overrides": {
+    "minimatch": "10.2.5"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.18",

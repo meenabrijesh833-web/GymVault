@@ -2,6 +2,7 @@ import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } fr
 import axios from 'axios'
 import LoginPage from './LoginPage';
 import SignupPage from './SignupPage';
+import LegalPage from './LegalPage';
 import SuperAdminLogin from './SuperAdminLogin';
 import SuperAdminDashboard from './SuperAdminDashboard';
 import PageErrorBoundary from './PageErrorBoundary';
@@ -12,6 +13,9 @@ import { clearSessionToken, getSessionToken, setSessionToken } from './utils/aut
 import { DEFAULT_BRANCH_ID, getBranchLabel, getBranchRequestValue, getDefaultBranchId, buildBranchOptions, normalizeBranchDirectory } from './utils/branchScope';
 import { reportClientError } from './utils/clientErrorReporter';
 import { lazyWithRecovery } from './utils/lazyWithRecovery';
+import { invalidateIntentData } from './utils/intentDataCache';
+import { prefetchMembersEntryData } from './utils/memberDataPrefetch';
+import { canPrefetchPageData, prefetchPageEntryData } from './utils/pageDataPrefetch';
 import {
   X, CheckCircle, AlertTriangle, AlertCircle,
   LayoutDashboard, Users, Layers, CreditCard,
@@ -32,6 +36,28 @@ const InsightsPage = lazyWithRecovery('insights', () => import('./InsightsPage')
 const SettingsPage = lazyWithRecovery('settings', () => import('./SettingsPage'));
 const HelpSupportPage = lazyWithRecovery('help-support', () => import('./HelpSupportPage'));
 const StaffDashboard = lazyWithRecovery('staff-dashboard', () => import('./StaffDashboard'));
+
+const PAGE_COMPONENTS = {
+  Dashboard: DashboardPage,
+  Members: MembersPage,
+  Leads: LeadsPage,
+  Plans: PlansPage,
+  Payments: PaymentsPage,
+  Attendance: AttendancePage,
+  Classes: ClassesPage,
+  'RFID Setup': RfidSetupPage,
+  Insights: InsightsPage,
+  Settings: SettingsPage,
+  'Help & Support': HelpSupportPage,
+};
+
+const prefetchPageChunk = (page) => {
+  const component = PAGE_COMPONENTS[page];
+  if (typeof component?.preload !== 'function') return;
+  component.preload().catch((error) => {
+    reportClientError(`Navigation prefetch: ${page}`, error);
+  });
+};
 
 // ─── Navigation Config ────────────────────────────────────────────────────────
 
@@ -310,7 +336,7 @@ function SplashScreen({ exiting }) {
 
 // ─── iOS-style sliding mobile nav ─────────────────────────────────────────────
 
-function MobileNav({ items, moreItems, currentPage, isMoreActive, showMobileMoreNav, isSuspended, onNav, onMoreToggle }) {
+function MobileNav({ items, moreItems, currentPage, isMoreActive, showMobileMoreNav, isSuspended, onNav, onMoreToggle, onPrefetch }) {
   const colCount = items.length + (moreItems.length > 0 ? 1 : 0);
   const containerRef = useRef(null);
   const pillRef = useRef(null);
@@ -367,6 +393,9 @@ function MobileNav({ items, moreItems, currentPage, isMoreActive, showMobileMore
             key={`mobile-${name}`}
             ref={el => { buttonRefs.current[idx] = el; }}
             onClick={() => onNav(name)}
+            onPointerEnter={() => onPrefetch(name)}
+            onFocus={() => onPrefetch(name)}
+            onTouchStart={() => onPrefetch(name)}
             disabled={isBlocked}
             className={`relative z-10 flex flex-col items-center justify-center gap-1 rounded-2xl py-2 px-1 transition-colors duration-200 ${
               isActive ? 'text-white' : 'text-slate-500 hover:text-slate-700'
@@ -400,6 +429,9 @@ function App() {
   const pathname = String(window.location.pathname || '/');
   const normalizedPathname = pathname.replace(/\/+$/, '') || '/';
   const isHQ = normalizedPathname === '/hq-admin' || normalizedPathname.startsWith('/hq-admin/');
+  const legalPageKind = normalizedPathname === '/terms'
+    ? 'terms'
+    : normalizedPathname === '/privacy' ? 'privacy' : '';
   const [superToken, setSuperToken] = useState('');
   
   const [currentPage, setCurrentPage] = useState('Dashboard');
@@ -427,6 +459,7 @@ function App() {
   const [isStandaloneMode, setIsStandaloneMode] = useState(false);
   const [showMobileMoreNav, setShowMobileMoreNav] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationNowMs, setNotificationNowMs] = useState(0);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const authTransitionRef = useRef(false);
   const [showSignup, setShowSignup] = useState(normalizedPathname === '/signup');
@@ -442,7 +475,6 @@ function App() {
   const dashboardFallbackNotifiedRef = useRef(false);
   const mainRef = useRef(null);
   const [visitedPages, setVisitedPages] = useState(() => new Set(['Dashboard']));
-  const animatedPagesRef = useRef(new Set());
   const operationsBranchIdRef = useRef('');
   const branchBroadcastStateRef = useRef({ initialized: false, lastBranchId: '' });
 
@@ -472,6 +504,7 @@ function App() {
     }
 
     const at = Number(detail.at || Date.now());
+    invalidateIntentData();
     window.__gymvaultLastDataChangeAt = Math.max(Number(window.__gymvaultLastDataChangeAt || 0), at);
 
     try {
@@ -600,12 +633,9 @@ function App() {
     window.history.replaceState({}, '', '/dashboard');
   }, [isHQ, stabilizeViewportAfterAuth]);
 
-  const getPageVisibility = useCallback((pageName) => {
-    if (currentPage !== pageName) return 'hidden';
-    if (animatedPagesRef.current.has(pageName)) return '';
-    animatedPagesRef.current.add(pageName);
-    return 'gv-page-fade';
-  }, [currentPage]);
+  const getPageVisibility = useCallback((pageName) => (
+    currentPage === pageName ? 'gv-page-fade' : 'hidden'
+  ), [currentPage]);
 
   useEffect(() => {
     if (isHQ) {
@@ -697,7 +727,6 @@ function App() {
     setSaasGraceNoticeKey('');
     setAuthUiErrorCode('');
     setVisitedPages(new Set(['Dashboard']));
-    animatedPagesRef.current = new Set();
     setCurrentPage('Dashboard');
     setShowNotifications(false);
     setShowProfileMenu(false);
@@ -784,7 +813,6 @@ function App() {
 
     let cancelled = false;
     setIsAuthChecking(true);
-    const pendingOAuth = oauthCookiePending.current;
     const pendingOauthBootstrapToken = oauthBootstrapTokenRef.current;
     oauthCookiePending.current = false;
     oauthBootstrapTokenRef.current = '';
@@ -1085,17 +1113,6 @@ function App() {
     return () => { cancelled = true; };
   }, [token, isHQ, isSuspended]);
 
-  const handleMarkAsRead = async (id) => {
-    try {
-      await axios.put(`/api/notifications/${id}/read`, {}, {
-        headers: { 'x-auth-token': token }
-      });
-      fetchNotifications(); 
-    } catch (err) {
-      reportClientError('Notifications mark read', err);
-    }
-  };
-
   const handleMarkAllAsRead = async () => {
     try {
       await axios.put('/api/notifications/read-all', {}, {
@@ -1281,13 +1298,36 @@ function App() {
     setCurrentPage(page);
   }, [isSuspended, canAccessPage]);
 
-  const normalizedBranchDirectory = normalizeBranchDirectory(branchDirectory);
+  const handleMemberFocusHandled = useCallback(() => setMemberFocus({ id: null, action: null }), []);
+  const handlePaymentFocusHandled = useCallback(() => setPaymentFocus({ id: null, action: null }), []);
+  const handlePaymentSectionHandled = useCallback(() => setPaymentSectionFocus(null), []);
+  const handleAttendanceSectionHandled = useCallback(() => setAttendanceSectionFocus(null), []);
+  const handleOpenRfidSetup = useCallback(() => navigateTo('RFID Setup'), [navigateTo]);
+  const handleCloseRfidSetup = useCallback(() => navigateTo('Attendance'), [navigateTo]);
+
+  const normalizedBranchDirectory = useMemo(() => normalizeBranchDirectory(branchDirectory), [branchDirectory]);
   const defaultBranchId = getDefaultBranchId(normalizedBranchDirectory);
   const branchScopeValue = getBranchRequestValue(operationsBranchId);
   const canSelectOperationsBranch = String(currentUser?.role || '').toUpperCase() === 'OWNER' && normalizedBranchDirectory.length > 1;
   const activeOperationsBranchLabel = getBranchLabel(normalizedBranchDirectory, operationsBranchId, {
     allLabel: normalizedBranchDirectory[0]?.name || 'Branch',
   });
+  const prefetchPage = useCallback((page) => {
+    prefetchPageChunk(page);
+    if (!token || !currentUser || isSuspended || !canPrefetchPageData()) return;
+
+    const prefetchPromise = page === 'Members' ? prefetchMembersEntryData({
+      token,
+      currentUser,
+      branchScopeValue,
+    }) : prefetchPageEntryData({
+      page,
+      token,
+      currentUser,
+      branchScopeValue,
+    });
+    void prefetchPromise.catch(() => {});
+  }, [branchScopeValue, currentUser, isSuspended, token]);
   const handleOperationsBranchChange = useCallback((nextBranchId) => {
     const resolvedBranchId = String(nextBranchId || defaultBranchId || DEFAULT_BRANCH_ID);
     if (resolvedBranchId === operationsBranchIdRef.current) {
@@ -1484,6 +1524,10 @@ function App() {
     return () => clearTimeout(fallbackTimer);
   }, [token, isHQ, isSuspended, currentUser, currentPage, stats]);
 
+  if (legalPageKind) {
+    return <LegalPage kind={legalPageKind} />;
+  }
+
   if (isHQ) {
     if (!superToken) {
       return <SuperAdminLogin setSuperToken={setSuperToken} />;
@@ -1514,7 +1558,6 @@ function App() {
         setCurrentUser(null);
       }
         setVisitedPages(new Set(['Dashboard']));
-        animatedPagesRef.current = new Set();
         setCurrentPage('Dashboard');
         setSaasGrace(false);
         setSaasGraceNoticeKey('');
@@ -1570,7 +1613,7 @@ function App() {
       {showSplash && <SplashScreen exiting={splashExiting} />}
 
       <div
-        className="flex overflow-hidden font-['Inter'] antialiased text-slate-900"
+        className="flex overflow-hidden font-sans antialiased text-slate-900"
         style={{
           /* position:fixed + inset:0 makes the shell ALWAYS fill the exact
              viewport � no dependence on window.innerHeight measurements.
@@ -1635,6 +1678,16 @@ function App() {
                   id={`nav-${name}`}
                   key={name}
                   onClick={() => handleSidebarNav(name)}
+                  onPointerEnter={() => prefetchPage(name)}
+                  onFocus={() => prefetchPage(name)}
+                  role="button"
+                  tabIndex={isBlocked ? -1 : 0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleSidebarNav(name);
+                    }
+                  }}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 group relative ${
                     isBlocked ? 'opacity-30 cursor-not-allowed grayscale' : 'cursor-pointer'
                   } ${
@@ -1655,6 +1708,8 @@ function App() {
           <div className="pt-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
             <button
               onClick={() => handleSidebarNav('Help & Support')}
+              onPointerEnter={() => prefetchPage('Help & Support')}
+              onFocus={() => prefetchPage('Help & Support')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${currentPage === 'Help & Support' ? 'text-white bg-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-white/[0.05]'}`}
             >
               <LifeBuoy size={16} className="shrink-0" />
@@ -1717,6 +1772,7 @@ function App() {
                 <button 
                   onClick={() => {
                     const opening = !showNotifications;
+                    if (opening) setNotificationNowMs(Date.now());
                     setShowNotifications(opening);
                     if (opening && unreadCount > 0) handleMarkAllAsRead();
                   }}
@@ -1753,9 +1809,8 @@ function App() {
                         ) : (
                           <div className="divide-y divide-slate-100">
                             {notifications.slice(0, 6).map(notif => {
-                              const now = Date.now();
                               const created = new Date(notif.created_at).getTime();
-                              const diffMin = Math.max(0, Math.floor((now - created) / 60000));
+                              const diffMin = Math.max(0, Math.floor(((notificationNowMs || created) - created) / 60000));
                               let timeLabel;
                               if (diffMin < 1) timeLabel = 'Just now';
                               else if (diffMin < 60) timeLabel = `${diffMin}m ago`;
@@ -1899,7 +1954,7 @@ function App() {
               {visitedPages.has('Members') && (
                 <PageErrorBoundary pageName="Members" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Members')}>
-                    <MembersPage key={`members-${memberFilter}`} appRuntime={appRuntime} defaultFilter={memberFilter} focusMemberId={memberFocus.id} focusAction={memberFocus.action} onFocusHandled={() => setMemberFocus({ id: null, action: null })} isActive={currentPage === 'Members'} />
+                    <MembersPage key={`members-${memberFilter}`} appRuntime={appRuntime} defaultFilter={memberFilter} focusMemberId={memberFocus.id} focusAction={memberFocus.action} onFocusHandled={handleMemberFocusHandled} isActive={currentPage === 'Members'} />
                   </Suspense>
                 </PageErrorBoundary>
               )}
@@ -1938,9 +1993,9 @@ function App() {
                       defaultFilter={paymentFilter}
                       focusPaymentId={paymentFocus.id}
                       focusAction={paymentFocus.action}
-                      onFocusHandled={() => setPaymentFocus({ id: null, action: null })}
+                      onFocusHandled={handlePaymentFocusHandled}
                       focusSection={paymentSectionFocus}
-                      onSectionHandled={() => setPaymentSectionFocus(null)}
+                      onSectionHandled={handlePaymentSectionHandled}
                     />
                   </Suspense>
                 </PageErrorBoundary>
@@ -1956,8 +2011,8 @@ function App() {
                       appRuntime={appRuntime}
                       isActive={currentPage === 'Attendance'}
                       focusSection={attendanceSectionFocus}
-                      onSectionHandled={() => setAttendanceSectionFocus(null)}
-                      onOpenRfidSetup={() => navigateTo('RFID Setup')}
+                      onSectionHandled={handleAttendanceSectionHandled}
+                      onOpenRfidSetup={handleOpenRfidSetup}
                     />
                   </Suspense>
                 </PageErrorBoundary>
@@ -1982,7 +2037,7 @@ function App() {
                   <Suspense fallback={renderPageLoader('RFID Setup')}>
                     <RfidSetupPage
                       appRuntime={appRuntime}
-                      navigateBack={() => navigateTo('Attendance')}
+                      navigateBack={handleCloseRfidSetup}
                     />
                   </Suspense>
                 </PageErrorBoundary>
@@ -2044,6 +2099,9 @@ function App() {
                   return (
                     <button
                       key={`mobile-more-${name}`}
+                      onPointerEnter={() => prefetchPage(name)}
+                      onFocus={() => prefetchPage(name)}
+                      onTouchStart={() => prefetchPage(name)}
                       onClick={() => {
                         setShowMobileMoreNav(false);
                         handleSidebarNav(name);
@@ -2074,6 +2132,7 @@ function App() {
               showMobileMoreNav={showMobileMoreNav}
               isSuspended={isSuspended}
               onNav={handleSidebarNav}
+              onPrefetch={prefetchPage}
               onMoreToggle={() => setShowMobileMoreNav((prev) => !prev)}
             />
           </div>

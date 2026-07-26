@@ -1,5 +1,6 @@
-import { lazy } from 'react';
+import { createElement, lazy, memo, Profiler } from 'react';
 import { reportClientError } from './clientErrorReporter';
+import { isRenderProfilingEnabled, recordRenderProfile } from './renderProfiler';
 
 const RETRY_PREFIX = 'gymvault:chunk-retry:';
 
@@ -63,20 +64,42 @@ const triggerHardReload = async (moduleKey, error) => {
   return new Promise(() => {});
 };
 
-export const lazyWithRecovery = (moduleKey, importer) => lazy(async () => {
-  try {
-    const module = await importer();
+export const lazyWithRecovery = (moduleKey, importer) => {
+  let modulePromise = null;
 
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.removeItem(getRetryKey(moduleKey));
-    }
+  const load = () => {
+    if (modulePromise) return modulePromise;
 
-    return module;
-  } catch (error) {
-    if (!isChunkLoadError(error)) {
-      throw error;
-    }
+    modulePromise = (async () => {
+      try {
+        const module = await importer();
 
-    return triggerHardReload(moduleKey, error);
-  }
-});
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem(getRetryKey(moduleKey));
+        }
+
+        return module;
+      } catch (error) {
+        modulePromise = null;
+        if (!isChunkLoadError(error)) {
+          throw error;
+        }
+
+        return triggerHardReload(moduleKey, error);
+      }
+    })();
+
+    return modulePromise;
+  };
+
+  const LazyComponent = lazy(load);
+  const PageComponent = (props) => {
+    const page = createElement(LazyComponent, props);
+    return isRenderProfilingEnabled()
+      ? createElement(Profiler, { id: `page:${moduleKey}`, onRender: recordRenderProfile }, page)
+      : page;
+  };
+  const MemoizedLazyComponent = memo(PageComponent);
+  MemoizedLazyComponent.preload = load;
+  return MemoizedLazyComponent;
+};

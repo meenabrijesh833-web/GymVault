@@ -7,6 +7,7 @@ import App from './App.jsx'
 import { clearSessionToken, getSessionToken } from './utils/authSession'
 import { applyInterfacePreferences, loadInterfacePreferencesLocal } from './utils/interfacePreferences'
 import { getApiOrigin } from './utils/apiUrl'
+import { invalidateIntentData } from './utils/intentDataCache'
 
 const unwrapApiData = (payload) => {
   let current = payload
@@ -52,6 +53,7 @@ const broadcastGlobalDataChange = (detail = {}) => {
   }
 
   const at = Number(detail.at || Date.now())
+  invalidateIntentData()
   window.__gymvaultLastDataChangeAt = Math.max(Number(window.__gymvaultLastDataChangeAt || 0), at)
 
   try {
