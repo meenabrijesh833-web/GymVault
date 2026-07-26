@@ -92,8 +92,8 @@ DB_USER=postgres.<project-ref>
 DB_PASSWORD=<database-password>
 DB_SSL=true
 DB_SSL_REJECT_UNAUTHORIZED=false
-DB_POOL_MAX=25
-DB_POOL_MIN=5
+DB_POOL_MAX=8
+DB_POOL_MIN=1
 
 JWT_SECRET=<new-long-random-secret>
 APP_SECRET_ENC_KEY=<new-long-random-secret>

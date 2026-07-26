@@ -350,6 +350,7 @@ const runAuthenticatedSettingsSmoke = async (auth) => {
   }
 
   const branchParam = encodeURIComponent(branchId);
+  const paymentsFrom = new Date(Date.now() - (31 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
   const branchScopedPaths = [
     `/api/dashboard/stats?branch_id=${branchParam}`,
     `/api/members?branch_id=${branchParam}`,
@@ -364,12 +365,19 @@ const runAuthenticatedSettingsSmoke = async (auth) => {
     `/api/settings?branch_id=${branchParam}`,
     `/api/users/staff?branch_id=${branchParam}`,
     `/api/users/tasks?branch_id=${branchParam}`,
+    `/api/notifications/campaign/composer?branch_id=${branchParam}`,
+    `/api/payments/stats?branch_id=${branchParam}&from=${paymentsFrom}`,
+    `/api/finance/overview?branch_id=${branchParam}&from=${paymentsFrom}&period=30d`,
+    `/api/attendance/overview?branch_id=${branchParam}`,
+    `/api/insights/overview?branch_id=${branchParam}&range=6M`,
+    '/api/support/overview',
+    '/api/support/tickets',
   ];
 
-  for (const pathname of branchScopedPaths) {
+  await Promise.all(branchScopedPaths.map(async (pathname) => {
     const result = await fetchJson(pathname, { headers });
     assertOk(result.response, result.payload, `Fetch branch-scoped page data: ${pathname}`);
-  }
+  }));
 
   const integrationsFetch = await fetchJson('/api/settings/integrations', { headers });
   assertOk(integrationsFetch.response, integrationsFetch.payload, 'Fetch integrations settings');
@@ -418,10 +426,8 @@ const runAuthenticatedSettingsSmoke = async (auth) => {
   console.log(`Authenticated settings smoke passed using ${auth.email || auth.source}.`);
 };
 
-const runAuthenticatedPaymentMembershipSmoke = async (auth) => {
+const runAuthenticatedPaymentMembershipSmoke = async (auth, fixtures) => {
   if (!auth) return;
-
-  const fixtures = await loadLocalSmokeFixtures(auth);
   if (!fixtures) return;
 
   const headers = { 'x-auth-token': auth.token };
@@ -622,8 +628,13 @@ const runRuntimeSmoke = async () => {
   await runPublicRequestSchemaSmoke();
 
   const auth = await createLocalSmokeAuth();
+  const fixtures = await loadLocalSmokeFixtures(auth);
+  if (localDbPool) {
+    await localDbPool.end();
+    localDbPool = null;
+  }
   await runAuthenticatedSettingsSmoke(auth);
-  await runAuthenticatedPaymentMembershipSmoke(auth);
+  await runAuthenticatedPaymentMembershipSmoke(auth, fixtures);
 
   console.log(`Runtime smoke passed against ${defaultBaseUrl}`);
 };

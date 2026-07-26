@@ -1,7 +1,7 @@
 process.env.DB_TENANT_RLS_ENFORCE = 'true';
 
 const assert = require('node:assert/strict');
-const { pool } = require('../../backend/config/db');
+const { pool, adminPool } = require('../../backend/config/db');
 const { runWithTenantDbContext } = require('../../backend/utils/tenantDbContext');
 
 const runtimeRole = String(process.env.DB_TENANT_RUNTIME_ROLE || 'gymvault_app').trim().toLowerCase();
@@ -12,6 +12,9 @@ const assertTenantSession = (row, gymId) => {
 };
 
 const main = async () => {
+    assert.ok(adminPool.options.max <= 8, 'The runtime pool must stay below the hosted session limit.');
+    assert.ok(adminPool.options.min <= 1, 'The runtime pool must reserve hosted sessions for deploys and operations.');
+
     const adminResult = await pool.query(
         "SELECT current_user, current_setting('app.current_gym_id', true) AS gym_id"
     );
@@ -33,6 +36,11 @@ const main = async () => {
         } finally {
             await client.release();
         }
+
+        const concurrentResults = await Promise.all(Array.from({ length: 20 }, () => pool.query(
+            "SELECT current_user, current_setting('app.current_gym_id', true) AS gym_id"
+        )));
+        concurrentResults.forEach((result) => assertTenantSession(result.rows[0], 101));
     });
 
     const resetResult = await pool.query(

@@ -474,7 +474,6 @@ function App() {
   const runtimeIssueReportRef = useRef({ key: '', at: 0 });
   const dashboardFallbackNotifiedRef = useRef(false);
   const mainRef = useRef(null);
-  const [visitedPages, setVisitedPages] = useState(() => new Set(['Dashboard']));
   const operationsBranchIdRef = useRef('');
   const branchBroadcastStateRef = useRef({ initialized: false, lastBranchId: '' });
 
@@ -585,15 +584,6 @@ function App() {
       },
     }));
   }, []);
-
-  useEffect(() => {
-    setVisitedPages((prev) => {
-      if (prev.has(currentPage)) return prev;
-      const next = new Set(prev);
-      next.add(currentPage);
-      return next;
-    });
-  }, [currentPage]);
 
   // Handle OAuth redirects. Google login now uses a short-lived bootstrap token so
   // the frontend can finish the session on the app origin even when the callback
@@ -726,7 +716,6 @@ function App() {
     setSaasGrace(false);
     setSaasGraceNoticeKey('');
     setAuthUiErrorCode('');
-    setVisitedPages(new Set(['Dashboard']));
     setCurrentPage('Dashboard');
     setShowNotifications(false);
     setShowProfileMenu(false);
@@ -1557,7 +1546,6 @@ function App() {
         writeStoredUser(null);
         setCurrentUser(null);
       }
-        setVisitedPages(new Set(['Dashboard']));
         setCurrentPage('Dashboard');
         setSaasGrace(false);
         setSaasGraceNoticeKey('');
@@ -1933,12 +1921,12 @@ function App() {
             </div>
           </header>
 
-          {/* ── Keep-alive page mounting: each page stays in DOM after first visit ── */}
+          {/* Mount only the active page so hidden screens cannot keep fetching data. */}
           <main ref={mainRef} className="app-scroll-shell flex-1 overflow-y-auto">
 
             {/* Dashboard */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll-dashboard ${getPageVisibility('Dashboard')}`}>
-              {visitedPages.has('Dashboard') && (
+              {currentPage === 'Dashboard' && (
                 <PageErrorBoundary pageName="Dashboard" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Dashboard')}>
                     {currentUser?.role === 'OWNER'
@@ -1951,7 +1939,7 @@ function App() {
 
             {/* Members */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Members')}`}>
-              {visitedPages.has('Members') && (
+              {currentPage === 'Members' && (
                 <PageErrorBoundary pageName="Members" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Members')}>
                     <MembersPage key={`members-${memberFilter}`} appRuntime={appRuntime} defaultFilter={memberFilter} focusMemberId={memberFocus.id} focusAction={memberFocus.action} onFocusHandled={handleMemberFocusHandled} isActive={currentPage === 'Members'} />
@@ -1962,7 +1950,7 @@ function App() {
 
             {/* Leads */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Leads')}`}>
-              {visitedPages.has('Leads') && (
+              {currentPage === 'Leads' && (
                 <PageErrorBoundary pageName="Leads" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Leads')}>
                     <LeadsPage appRuntime={appRuntime} canManage={hasPermission('members:write')} />
@@ -1973,7 +1961,7 @@ function App() {
 
             {/* Plans */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Plans')}`}>
-              {visitedPages.has('Plans') && (
+              {currentPage === 'Plans' && (
                 <PageErrorBoundary pageName="Plans" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Plans')}>
                     <PlansPage appRuntime={appRuntime} />
@@ -1984,7 +1972,7 @@ function App() {
 
             {/* Payments */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Payments')}`}>
-              {visitedPages.has('Payments') && (
+              {currentPage === 'Payments' && (
                 <PageErrorBoundary pageName="Payments" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Payments')}>
                     <PaymentsPage
@@ -2004,7 +1992,7 @@ function App() {
 
             {/* Attendance */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Attendance')}`}>
-              {visitedPages.has('Attendance') && (
+              {currentPage === 'Attendance' && (
                 <PageErrorBoundary pageName="Attendance" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Attendance')}>
                     <AttendancePage
@@ -2021,7 +2009,7 @@ function App() {
 
             {/* Classes */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Classes')}`}>
-              {visitedPages.has('Classes') && (
+              {currentPage === 'Classes' && (
                 <PageErrorBoundary pageName="Classes" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Classes')}>
                     <ClassesPage appRuntime={appRuntime} canManage={hasPermission('attendance:write')} />
@@ -2032,7 +2020,7 @@ function App() {
 
             {/* RFID Setup */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('RFID Setup')}`}>
-              {visitedPages.has('RFID Setup') && (
+              {currentPage === 'RFID Setup' && (
                 <PageErrorBoundary pageName="RFID Setup" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('RFID Setup')}>
                     <RfidSetupPage
@@ -2046,7 +2034,7 @@ function App() {
 
             {/* Insights */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Insights')}`}>
-              {visitedPages.has('Insights') && (
+              {currentPage === 'Insights' && (
                 <PageErrorBoundary pageName="Insights" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Insights')}>
                     <InsightsPage appRuntime={appRuntime} isActive={currentPage === 'Insights'} />
@@ -2057,7 +2045,7 @@ function App() {
 
             {/* Settings */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Settings')}`}>
-              {visitedPages.has('Settings') && (
+              {currentPage === 'Settings' && (
                 <PageErrorBoundary pageName="Settings" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Settings')}>
                     <SettingsPage appRuntime={appRuntime} defaultTab={settingsTab} isActive={currentPage === 'Settings'} />
@@ -2068,7 +2056,7 @@ function App() {
 
             {/* Help & Support */}
             <div className={`max-w-[1400px] mx-auto w-full p-4 desktop:p-6 lg:p-8 app-main-scroll ${getPageVisibility('Help & Support')}`}>
-              {visitedPages.has('Help & Support') && (
+              {currentPage === 'Help & Support' && (
                 <PageErrorBoundary pageName="Help & Support" onGoHome={() => navigateTo('Dashboard')}>
                   <Suspense fallback={renderPageLoader('Help & Support')}>
                     <HelpSupportPage appRuntime={appRuntime} />

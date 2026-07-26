@@ -454,6 +454,10 @@ const dbSslConfig = buildSslConfig();
 const tenantRlsEnforced = parseBoolean(process.env.DB_TENANT_RLS_ENFORCE, true);
 const tenantRuntimeRole = normalizeDatabaseRoleName(process.env.DB_TENANT_RUNTIME_ROLE, 'gymvault_app');
 const tenantRuntimeRoleIdentifier = quoteIdentifier(tenantRuntimeRole);
+const configuredPoolMax = parsePositiveInt(process.env.DB_POOL_MAX, 8);
+const configuredPoolMin = parsePositiveInt(process.env.DB_POOL_MIN, 1);
+const poolMax = isLoadTest ? 200 : Math.min(configuredPoolMax, 8);
+const poolMin = isLoadTest ? 20 : Math.min(configuredPoolMin, poolMax, 1);
 let databaseSecurityEventHandler = null;
 
 const adminPool = new Pool({
@@ -462,8 +466,8 @@ const adminPool = new Pool({
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     database: process.env.DB_NAME,
-    max: isLoadTest ? 200 : parsePositiveInt(process.env.DB_POOL_MAX, 100),
-    min: isLoadTest ? 20 : parsePositiveInt(process.env.DB_POOL_MIN, 10),
+    max: poolMax,
+    min: poolMin,
     idleTimeoutMillis: parsePositiveInt(process.env.DB_IDLE_TIMEOUT_MS, 60000),
     connectionTimeoutMillis: isLoadTest ? 30000 : parsePositiveInt(process.env.DB_CONNECTION_TIMEOUT_MS, 5000),
     query_timeout: parsePositiveInt(process.env.DB_QUERY_TIMEOUT_MS, 30000),

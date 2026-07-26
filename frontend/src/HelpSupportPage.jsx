@@ -197,9 +197,16 @@ function HelpSupportPage({ appRuntime }) {
         axios.get('/api/support/tickets', headers),
       ]);
 
-      setOverview(overviewRes.data || {
-        contact: { phone: '', email: '', whatsapp: '', website: '' },
-        about: { title: '', mission: '', address: '', support_window: '' },
+      const overviewData = overviewRes.data && typeof overviewRes.data === 'object' ? overviewRes.data : {};
+      setOverview({
+        contact: {
+          phone: '', email: '', whatsapp: '', website: '',
+          ...(overviewData.contact && typeof overviewData.contact === 'object' ? overviewData.contact : {}),
+        },
+        about: {
+          title: '', mission: '', address: '', support_window: '',
+          ...(overviewData.about && typeof overviewData.about === 'object' ? overviewData.about : {}),
+        },
       });
       setTickets(Array.isArray(ticketsRes.data) ? ticketsRes.data : []);
       setAccessDenied(false);

@@ -373,7 +373,7 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
     }
   };
 
-  const peakHourLabel = overview.peak_hour_today === null
+  const peakHourLabel = overview.peak_hour_today == null || overview.peak_hour_today === ''
     ? '—'
     : `${String(overview.peak_hour_today).padStart(2, '0')}:00`;
 
