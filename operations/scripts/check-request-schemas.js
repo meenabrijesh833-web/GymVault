@@ -203,13 +203,30 @@ const testValidationPrimitives = () => {
     assert.equal(invokeMiddleware(oauthCallbackSchema, {
         method: 'GET',
         baseUrl: '/api/auth',
-        originalUrl: '/api/auth/google/callback?code=provider-code&state=signed-state',
+        originalUrl: '/api/auth/google/callback?state=signup&iss=https%3A%2F%2Faccounts.google.com&code=provider-code&scope=email+profile&authuser=0&prompt=consent',
         body: {},
-        query: { code: 'provider-code', state: 'signed-state' },
+        query: {
+            state: 'signup',
+            iss: 'https://accounts.google.com',
+            code: 'provider-code',
+            scope: 'email profile',
+            authuser: '0',
+            prompt: 'consent',
+        },
         params: {},
         headers: {},
         socket: {},
     }).nextCalled, true);
+    assert.equal(invokeMiddleware(oauthCallbackSchema, {
+        method: 'GET',
+        baseUrl: '/api/auth',
+        originalUrl: '/api/auth/google/callback?state=signup&iss=https%3A%2F%2Fevil.example&code=provider-code',
+        body: {},
+        query: { state: 'signup', iss: 'https://evil.example', code: 'provider-code' },
+        params: {},
+        headers: {},
+        socket: {},
+    }).nextCalled, false);
     assert.equal(invokeMiddleware(oauthCallbackSchema, {
         method: 'GET',
         baseUrl: '/api/auth',
