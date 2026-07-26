@@ -19,7 +19,15 @@ import {
 
 const DASHBOARD_REQUEST_TIMEOUT_MS = 12000;
 const MAX_WARMUP_RETRIES = 8;
+const RETRYABLE_DASHBOARD_STATUSES = new Set([408, 425, 429]);
 const TERMINAL_RAZORPAY_LINK_STATUSES = new Set(['PAID', 'EXPIRED', 'CANCELLED', 'FAILED', 'NOT_FOUND']);
+
+const isRetryableDashboardFailure = (result) => {
+  if (result?.status !== 'rejected') return false;
+
+  const status = Number(result.reason?.response?.status || 0);
+  return status === 0 || status >= 500 || RETRYABLE_DASHBOARD_STATUSES.has(status);
+};
 
 const unwrapApiData = (payload) => {
   if (payload && typeof payload === 'object' && 'data' in payload) {
@@ -322,18 +330,21 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       ];
       const failedCalls = requestResults
         .filter((result) => result.status === 'rejected')
-        .length;
-      const successfulCalls = requestResults.length - failedCalls;
+      const failedCallCount = failedCalls.length;
+      const successfulCalls = requestResults.length - failedCallCount;
+      const allCallsFailed = successfulCalls === 0;
+      const allFailuresRetryable = allCallsFailed && failedCalls.every(isRetryableDashboardFailure);
+      const firstFailure = failedCalls[0]?.reason || new Error('Dashboard data is unavailable.');
 
-      if (failedCalls === requestResults.length && warmupRetryCountRef.current === 0) {
-        toast?.('Server is waking up. Dashboard will retry automatically.', 'warning');
+      if (allFailuresRetryable && warmupRetryCountRef.current === 0) {
+        toast?.('Dashboard data is temporarily unavailable. Retrying automatically.', 'warning');
       }
 
       if (successfulCalls > 0) {
         setFetchError(null);
       }
 
-      if (successfulCalls === 0 && warmupRetryCountRef.current < MAX_WARMUP_RETRIES) {
+      if (allFailuresRetryable && warmupRetryCountRef.current < MAX_WARMUP_RETRIES) {
         warmupRetryCountRef.current += 1;
         setIsWarmupRetrying(true);
         const retryDelayMs = Math.min(4000 * warmupRetryCountRef.current, 30000);
@@ -346,6 +357,9 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       } else {
         warmupRetryCountRef.current = 0;
         setIsWarmupRetrying(false);
+        if (allCallsFailed) {
+          setFetchError(firstFailure);
+        }
         if (warmupRetryTimerRef.current) {
           window.clearTimeout(warmupRetryTimerRef.current);
           warmupRetryTimerRef.current = null;

@@ -69,6 +69,9 @@ const testValidationPrimitives = () => {
     assert.equal(validateBodyField('repeat_days', [1, 7]), false);
     assert.equal(validateQueryValue('limit', '50'), true);
     assert.equal(validateQueryValue('limit', '50x'), false);
+    assert.equal(validateQueryValue('branch_id', 'branch-1'), true);
+    assert.equal(validateQueryValue('branch_id', 'all'), true);
+    assert.equal(validateQueryValue('branch_id', 'branch/1'), false);
     assert.equal(validateQueryValue('refresh', 'true'), true);
     assert.equal(validateQueryValue('refresh', 'sometimes'), false);
     assert.equal(validateRouteParamValue('id', '42'), true);

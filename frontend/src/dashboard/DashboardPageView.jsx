@@ -472,7 +472,7 @@ const DashboardPageView = ({ controller, isActive = true }) => {
 
       {isWarmupRetrying && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 px-4 py-3 text-sm font-semibold">
-          Backend is starting up. Loading your data...
+          Dashboard data is temporarily unavailable. Retrying automatically...
         </div>
       )}
 

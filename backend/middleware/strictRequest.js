@@ -504,6 +504,9 @@ const validateQueryValue = (field, value) => {
     const raw = String(value);
     if (raw.length > 4096 || /[\u0000-\u001F\u007F]/.test(raw)) return false;
 
+    if (field === 'branch_id') {
+        return raw.toLowerCase() === 'all' || /^[a-z0-9][a-z0-9_-]{0,59}$/i.test(raw);
+    }
     if (INTEGER_QUERY_FIELDS.test(field)) {
         const max = field === 'limit' ? 500 : field === 'days' ? 3650 : Number.MAX_SAFE_INTEGER;
         return isStrictNumber(raw, { integer: true, min: field === 'authuser' ? 0 : 1, max });
@@ -513,9 +516,6 @@ const validateQueryValue = (field, value) => {
     }
     if (DATE_QUERY_FIELDS.test(field)) {
         return raw.length <= 60 && !Number.isNaN(new Date(raw).getTime());
-    }
-    if (field === 'branch_id') {
-        return raw.toLowerCase() === 'all' || /^[a-z0-9][a-z0-9_-]{0,59}$/i.test(raw);
     }
     if (['q', 'search'].includes(field)) return raw.length <= 200;
     return raw.length <= 4096;

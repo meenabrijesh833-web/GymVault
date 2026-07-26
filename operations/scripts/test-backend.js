@@ -341,6 +341,36 @@ const runAuthenticatedSettingsSmoke = async (auth) => {
   if (!auth) return;
 
   const headers = { 'x-auth-token': auth.token };
+  const settingsFetch = await fetchJson('/api/settings', { headers });
+  assertOk(settingsFetch.response, settingsFetch.payload, 'Fetch root settings');
+
+  const branchId = String(settingsFetch.payload?.gym?.branch_directory?.[0]?.id || '').trim();
+  if (!branchId) {
+    throw new Error('Root settings payload is missing the primary branch identifier.');
+  }
+
+  const branchParam = encodeURIComponent(branchId);
+  const branchScopedPaths = [
+    `/api/dashboard/stats?branch_id=${branchParam}`,
+    `/api/members?branch_id=${branchParam}`,
+    `/api/memberships/plans?branch_id=${branchParam}`,
+    `/api/payments/stats?branch_id=${branchParam}`,
+    `/api/payments/chart?branch_id=${branchParam}&days=7`,
+    `/api/attendance/summary?branch_id=${branchParam}`,
+    `/api/attendance/today?branch_id=${branchParam}`,
+    `/api/leads/summary?branch_id=${branchParam}`,
+    `/api/notifications/campaign/churn-scores?branch_id=${branchParam}&limit=30`,
+    `/api/notifications/campaign/logs?branch_id=${branchParam}&limit=50`,
+    `/api/settings?branch_id=${branchParam}`,
+    `/api/users/staff?branch_id=${branchParam}`,
+    `/api/users/tasks?branch_id=${branchParam}`,
+  ];
+
+  for (const pathname of branchScopedPaths) {
+    const result = await fetchJson(pathname, { headers });
+    assertOk(result.response, result.payload, `Fetch branch-scoped page data: ${pathname}`);
+  }
+
   const integrationsFetch = await fetchJson('/api/settings/integrations', { headers });
   assertOk(integrationsFetch.response, integrationsFetch.payload, 'Fetch integrations settings');
 
@@ -504,6 +534,23 @@ const testNoRawServerErrorResponses = () => {
   );
 };
 
+const testNoTenantPoolSchemaDdl = () => {
+  const tenantAwareTargets = [
+    ...collectJsFiles(path.join(workspaceRoot, 'backend', 'routes')),
+    ...collectJsFiles(path.join(workspaceRoot, 'backend', 'utils')),
+  ];
+  const tenantPoolDdlPattern = /\bpool\.query\(\s*`\s*(?:ALTER|CREATE|DROP|TRUNCATE|GRANT|REVOKE)\b/;
+  const violations = tenantAwareTargets
+    .filter((target) => tenantPoolDdlPattern.test(fs.readFileSync(target, 'utf8')))
+    .map((target) => path.relative(workspaceRoot, target));
+
+  assert.deepEqual(
+    violations,
+    [],
+    `Request-time schema DDL must use adminPool, not the tenant-aware pool: ${violations.join(', ')}`
+  );
+};
+
 const testTelemetryRedaction = () => {
   const { sanitizeTelemetryValue } = require('../../backend/utils/runtimeTelemetry');
   const sanitized = sanitizeTelemetryValue({
@@ -583,6 +630,7 @@ const runRuntimeSmoke = async () => {
 
 (async () => {
   testNoRawServerErrorResponses();
+  testNoTenantPoolSchemaDdl();
   testTelemetryRedaction();
   await testTenantDbContextIsolation();
 

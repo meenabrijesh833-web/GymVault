@@ -45,7 +45,7 @@ const {
 const { clearUserAuthCookie } = require('../utils/authCookies');
 const { invalidateGymTimezoneCache } = require('../utils/gymTime');
 const { sanitizeInlineImageDataUrl } = require('../utils/inlineImageSafety');
-const { recordSecurityEvent } = require('../utils/runtimeTelemetry');
+const { recordRuntimeEvent, recordSecurityEvent } = require('../utils/runtimeTelemetry');
 const {
     computeEffectiveBillingLimits,
     ensureGymBillingAddonSchema,
@@ -1236,7 +1236,10 @@ const ensureSupportProfileTable = async () => {
                 sla TEXT,
                 updated_at TIMESTAMP DEFAULT NOW()
             );
-        `);
+        `).catch((error) => {
+            ensureSupportProfileTablePromise = null;
+            throw error;
+        });
     }
     await ensureSupportProfileTablePromise;
 };
@@ -1292,14 +1295,17 @@ const ensureMessagingSchema = async () => {
                 );
             `);
 
-            await pool.query(`
+            await adminPool.query(`
                 ALTER TABLE gym_message_templates ADD COLUMN IF NOT EXISTS whatsapp_template_name VARCHAR(120);
                 ALTER TABLE gym_message_templates ADD COLUMN IF NOT EXISTS whatsapp_template_language VARCHAR(20) DEFAULT 'en_US';
                 ALTER TABLE gym_message_templates ADD COLUMN IF NOT EXISTS whatsapp_template_category VARCHAR(30) DEFAULT 'UTILITY';
                 ALTER TABLE gym_message_templates ADD COLUMN IF NOT EXISTS whatsapp_template_status VARCHAR(30) DEFAULT 'NOT_SYNCED';
                 ALTER TABLE gym_message_templates ADD COLUMN IF NOT EXISTS whatsapp_template_error TEXT;
             `);
-        })();
+        })().catch((error) => {
+            ensureMessagingSchemaPromise = null;
+            throw error;
+        });
     }
     await ensureMessagingSchemaPromise;
 };
@@ -1329,7 +1335,10 @@ const ensureMemberPaymentsSchema = async () => {
                 UPDATE gyms SET member_payments_enabled = TRUE WHERE COALESCE(member_payments_enabled, FALSE) = FALSE;
                 UPDATE gyms SET member_payments_connect_mode = 'PARTNER' WHERE COALESCE(member_payments_connect_mode, '') = '';
             `);
-        })();
+        })().catch((error) => {
+            ensureMemberPaymentsSchemaPromise = null;
+            throw error;
+        });
     }
     await ensureMemberPaymentsSchemaPromise;
 };
@@ -1344,7 +1353,7 @@ const ensurePreferenceSchema = async () => {
                 ADD COLUMN IF NOT EXISTS interface_dark_mode BOOLEAN DEFAULT TRUE;
             `);
             await adminPool.query(`ALTER TABLE gyms ALTER COLUMN interface_dark_mode SET DEFAULT TRUE;`);
-            await pool.query(`UPDATE gyms SET interface_dark_mode = TRUE WHERE interface_dark_mode IS NULL;`);
+            await adminPool.query(`UPDATE gyms SET interface_dark_mode = TRUE WHERE interface_dark_mode IS NULL;`);
             await adminPool.query(`
                 ALTER TABLE users
                 ALTER COLUMN profile_pic TYPE TEXT;
@@ -1352,7 +1361,10 @@ const ensurePreferenceSchema = async () => {
             // Receipt branding columns
             await adminPool.query(`ALTER TABLE gyms ADD COLUMN IF NOT EXISTS gym_logo TEXT;`);
             await adminPool.query(`ALTER TABLE gyms ADD COLUMN IF NOT EXISTS owner_signature TEXT;`);
-        })();
+        })().catch((error) => {
+            ensurePreferenceSchemaPromise = null;
+            throw error;
+        });
     }
     await ensurePreferenceSchemaPromise;
 };
@@ -1397,7 +1409,10 @@ const ensurePlatformSchema = async () => {
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 );
             `);
-        })();
+        })().catch((error) => {
+            ensurePlatformSchemaPromise = null;
+            throw error;
+        });
     }
     await ensurePlatformSchemaPromise;
 };
@@ -1524,6 +1539,19 @@ router.get('/', auth, async (req, res) => {
         });
     } catch (err) {
         console.error('SETTINGS ROOT ERROR:', err.message);
+        void recordRuntimeEvent({
+            eventType: 'SETTINGS_LOAD_ERROR',
+            severity: 'ERROR',
+            source: 'settings',
+            message: 'Settings root failed to load.',
+            route: req.originalUrl || req.path,
+            method: req.method,
+            statusCode: 500,
+            gymId: req.user?.gym_id,
+            userId: req.user?.id,
+            actorRole: req.user?.role,
+            metadata: { error_code: err?.code || null },
+        });
         res.status(500).json({ error: "Server Error" });
     }
 });
