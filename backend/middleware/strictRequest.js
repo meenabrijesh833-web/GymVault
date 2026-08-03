@@ -35,6 +35,7 @@ const ROUTE_QUERY_SCHEMAS = {
     'GET /api/auth/google/callback': {
         requiredFields: ['state'],
         exactlyOneOf: ['code', 'error'],
+        allowUnknownQuery: true,
         fieldRules: {
             state: { type: 'string', minLength: 1, maxLength: 4096 },
             code: { type: 'string', minLength: 1, maxLength: 2048 },
@@ -175,6 +176,7 @@ const ROUTE_QUERY_SCHEMAS = {
     'GET /api/memberships/online/connect/callback': {
         requiredFields: ['state'],
         exactlyOneOf: ['code', 'error'],
+        allowUnknownQuery: true,
         fieldRules: {
             state: { type: 'string', minLength: 1, maxLength: 4096 },
             code: { type: 'string', minLength: 1, maxLength: 2048 },
@@ -552,7 +554,22 @@ const routeRequestSchema = (routePath, method, handlers = []) => {
         const queryFields = Object.keys(query);
         const unknownQueryFields = queryFields.filter((field) => !routeAllowedQueryFields.has(field));
         if (unknownQueryFields.length > 0) {
-            return rejectSchema(req, res, 'unknown_query_fields', unknownQueryFields, 'query');
+            if (querySchema.allowUnknownQuery) {
+                // External providers (Google, Razorpay) may add new callback params over time;
+                // log and ignore them instead of hard-failing the redirect, but still run the
+                // value-safety and critical-field checks below.
+                void recordRuntimeEvent({
+                    eventType: 'REQUEST_SCHEMA_UNKNOWN_QUERY_IGNORED',
+                    severity: 'INFO',
+                    source: 'security',
+                    message: `${req.method} ${req.originalUrl || req.path || '/'} received unrecognized provider query fields`,
+                    route: req.originalUrl || req.path,
+                    method: req.method,
+                    metadata: { unknown_fields: unknownQueryFields.slice(0, 20) },
+                });
+            } else {
+                return rejectSchema(req, res, 'unknown_query_fields', unknownQueryFields, 'query');
+            }
         }
         const invalidQueryFields = queryFields.filter((field) => !validateQueryValue(field, query[field]));
         if (invalidQueryFields.length > 0) {
