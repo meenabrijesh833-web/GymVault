@@ -5,6 +5,7 @@ import {
   Pencil, Trash2, ArrowRight, CheckCircle2, Sparkles, Send, RefreshCw,
 } from 'lucide-react';
 import { getBranchRequestValue } from './utils/branchScope';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from './utils/pageStateCache';
 import PageLoader from './PageLoader';
 import PaginationControls from './components/PaginationControls';
 
@@ -164,13 +165,19 @@ const LeadsPage = ({ appRuntime, canManage = false }) => {
   const operationsBranchId = appRuntime.operationsBranchId || currentUser?.branch_id || defaultBranchId;
   const branchScopeValue = getBranchRequestValue(operationsBranchId);
   const branchQueryParams = useMemo(() => (branchScopeValue ? { branch_id: branchScopeValue } : {}), [branchScopeValue]);
-  const [summary, setSummary] = useState(null);
-  const [leads, setLeads] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [leadsSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({
+    page: 'leads',
+    currentUser,
+    branchScopeValue,
+    signature: 'ALL::1:20',
+  })));
+  const [summary, setSummary] = useState(() => leadsSeed?.summary || null);
+  const [leads, setLeads] = useState(() => leadsSeed?.leads || []);
+  const [loading, setLoading] = useState(() => !leadsSeed);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
+  const [pagination, setPagination] = useState(() => leadsSeed?.pagination || { page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
   const [formState, setFormState] = useState(INITIAL_FORM);
@@ -182,7 +189,7 @@ const LeadsPage = ({ appRuntime, canManage = false }) => {
   const [chatSending, setChatSending] = useState(false);
   const [chatTemplateKey, setChatTemplateKey] = useState('');
   const [chatMessage, setChatMessage] = useState('');
-  const loadCompletedRef = useRef(false);
+  const loadCompletedRef = useRef(Boolean(leadsSeed));
   const chatEndRef = useRef(null);
 
   const fetchLeadsData = useCallback(async ({ soft = false } = {}) => {
@@ -207,20 +214,32 @@ const LeadsPage = ({ appRuntime, canManage = false }) => {
         }),
       ]);
 
-      setSummary(summaryRes.data || {});
-      setLeads(Array.isArray(leadsRes.data?.items) ? leadsRes.data.items : []);
+      const nextSummary = summaryRes.data || {};
+      const nextLeads = Array.isArray(leadsRes.data?.items) ? leadsRes.data.items : [];
+      const nextPagination = { page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, hasPrev: false, ...(leadsRes.data?.pagination || {}) };
+      setSummary(nextSummary);
+      setLeads(nextLeads);
       setPagination((prev) => ({
         ...prev,
         ...(leadsRes.data?.pagination || {}),
       }));
       loadCompletedRef.current = true;
+      writePageStateSnapshot(
+        buildPageStateKey({
+          page: 'leads',
+          currentUser,
+          branchScopeValue,
+          signature: `${statusFilter}:${searchTerm || ''}:${pagination.page}:${pagination.limit}`,
+        }),
+        { summary: nextSummary, leads: nextLeads, pagination: nextPagination },
+      );
     } catch (_err) {
       toast?.('Unable to load leads right now.', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [branchQueryParams, pagination.limit, pagination.page, searchTerm, statusFilter, toast, token]);
+  }, [branchQueryParams, branchScopeValue, currentUser, pagination.limit, pagination.page, searchTerm, statusFilter, toast, token]);
 
   useEffect(() => {
     if (!token) return undefined;

@@ -7,6 +7,7 @@ import {
 import { normalizeProfileImageUrl } from './utils/profileImage';
 import PageLoader from './PageLoader';
 import { getBranchLabel, getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from './utils/pageStateCache';
 
 const COLOR_THEMES = {
   indigo: {
@@ -194,10 +195,11 @@ const ClassesPage = ({ appRuntime, canManage = false }) => {
   const branchScopeValue = getBranchRequestValue(operationsBranchId);
   const showBranchMeta = branchDirectory.length > 1;
   const getClassBranchLabel = useCallback((record) => getBranchLabel(branchDirectory, record?.branch_id || branchScopeValue || defaultBranchId, { allLabel: 'Main Branch' }), [branchDirectory, branchScopeValue, defaultBranchId]);
-  const [summary, setSummary] = useState(null);
-  const [classTypes, setClassTypes] = useState([]);
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [classesSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({ page: 'classes', currentUser, branchScopeValue })));
+  const [summary, setSummary] = useState(() => classesSeed?.summary || null);
+  const [classTypes, setClassTypes] = useState(() => classesSeed?.classTypes || []);
+  const [sessions, setSessions] = useState(() => classesSeed?.sessions || []);
+  const [loading, setLoading] = useState(() => !classesSeed);
   const [refreshing, setRefreshing] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [editingType, setEditingType] = useState(null);
@@ -211,7 +213,7 @@ const ClassesPage = ({ appRuntime, canManage = false }) => {
   const [memberSearch, setMemberSearch] = useState('');
   const [memberResults, setMemberResults] = useState([]);
   const [memberSearchLoading, setMemberSearchLoading] = useState(false);
-  const loadCompletedRef = useRef(false);
+  const loadCompletedRef = useRef(Boolean(classesSeed));
   const selectedSession = sessions.find((session) => Number(session.id) === Number(selectedSessionId)) || null;
 
   const fetchClassesData = useCallback(async ({ soft = false } = {}) => {
@@ -237,17 +239,24 @@ const ClassesPage = ({ appRuntime, canManage = false }) => {
         }),
       ]);
 
-      setSummary(summaryRes.data || {});
-      setClassTypes(Array.isArray(typesRes.data) ? typesRes.data : []);
-      setSessions(Array.isArray(scheduleRes.data) ? scheduleRes.data : []);
+      const nextSummary = summaryRes.data || {};
+      const nextTypes = Array.isArray(typesRes.data) ? typesRes.data : [];
+      const nextSessions = Array.isArray(scheduleRes.data) ? scheduleRes.data : [];
+      setSummary(nextSummary);
+      setClassTypes(nextTypes);
+      setSessions(nextSessions);
       loadCompletedRef.current = true;
+      writePageStateSnapshot(
+        buildPageStateKey({ page: 'classes', currentUser, branchScopeValue }),
+        { summary: nextSummary, classTypes: nextTypes, sessions: nextSessions },
+      );
     } catch (_err) {
       toast?.('Unable to load class operations right now.', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [branchScopeValue, toast, token]);
+  }, [branchScopeValue, currentUser, toast, token]);
 
   const fetchBookings = async (sessionId) => {
     if (!sessionId) return;

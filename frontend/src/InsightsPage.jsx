@@ -16,6 +16,7 @@ import { buildReminderPreviewDialog, getReminderPreviewBlockReason, previewWhats
 import { getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
 import PageLoader from './PageLoader';
 import { getAttendancePeakHoursData, getInsightsFranchiseData, getInsightsOverviewData } from './utils/pageDataPrefetch';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from './utils/pageStateCache';
 
 const EMPTY_ANALYTICS = {
   revenue: {
@@ -197,15 +198,28 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
   const currentPlanId = String(currentUser?.saas_plan || currentUser?.current_plan || '').trim().toLowerCase();
   const canViewFranchiseInsights = String(currentUser?.role || '').trim().toUpperCase() === 'OWNER' && ['growth', 'pro'].includes(currentPlanId);
   const [activeTab, setActiveTab] = useState('revenue');
-  const [analytics, setAnalytics] = useState(EMPTY_ANALYTICS);
+  const [insightsSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({
+    page: 'insights', currentUser, branchScopeValue, signature: '6M',
+  })));
+  const [peakSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({
+    page: 'insights-peak', currentUser, branchScopeValue, signature: '7',
+  })));
+  const [analytics, setAnalytics] = useState(() => insightsSeed?.analytics || EMPTY_ANALYTICS);
   const [franchiseAnalytics, setFranchiseAnalytics] = useState(EMPTY_FRANCHISE_ANALYTICS);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !insightsSeed);
   const [franchiseLoading, setFranchiseLoading] = useState(false);
   const [dateRange, setDateRange] = useState('6M');
   const [insightsPeakDays, setInsightsPeakDays] = useState('7');
-  const [insightsPeakHours, setInsightsPeakHours] = useState([]);
+  const [insightsPeakHours, setInsightsPeakHours] = useState(() => peakSeed?.peakHours || []);
   const [reminderLoadingKey, setReminderLoadingKey] = useState('');
-  const cacheRef = useRef(new Map());
+  const cacheRef = useRef(null);
+  if (cacheRef.current == null) {
+    const seededCache = new Map();
+    if (insightsSeed?.analytics) {
+      seededCache.set(`6M:${branchScopeValue || 'all'}`, insightsSeed.analytics);
+    }
+    cacheRef.current = seededCache;
+  }
 
   const sendWhatsApp = async (member, type) => {
     if (!member?.id) {
@@ -299,6 +313,10 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
       const normalized = normalizeInsightsPayload(res.data || {});
       cacheRef.current.set(cacheKey, normalized);
       setAnalytics(normalized);
+      writePageStateSnapshot(
+        buildPageStateKey({ page: 'insights', currentUser, branchScopeValue, signature: range }),
+        { analytics: normalized },
+      );
     } catch (err) {
       toast?.(err?.response?.data?.error || 'Failed to load insights.', 'error');
       setAnalytics(EMPTY_ANALYTICS);
@@ -357,10 +375,15 @@ const InsightsPage = ({ appRuntime, isActive = true }) => {
     })
       .then((res) => {
         const rows = Array.isArray(res.data) ? res.data : [];
-        setInsightsPeakHours(rows.map((item) => ({
+        const mapped = rows.map((item) => ({
           time: `${String(item.hour).padStart(2, '0')}:00`,
           count: Number(item.count || 0),
-        })));
+        }));
+        setInsightsPeakHours(mapped);
+        writePageStateSnapshot(
+          buildPageStateKey({ page: 'insights-peak', currentUser, branchScopeValue, signature: String(insightsPeakDays) }),
+          { peakHours: mapped },
+        );
       })
       .catch(() => {});
   }, [token, currentUser, branchScopeValue, insightsPeakDays, isActive]);

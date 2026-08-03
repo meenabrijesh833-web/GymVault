@@ -12,6 +12,7 @@ import {
   getAttendancePeakHoursData,
   getAttendanceRecordsData,
 } from './utils/pageDataPrefetch';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from './utils/pageStateCache';
 import useCountUp from './utils/useCountUp';
 import { buildReminderPreviewDialog, getReminderPreviewBlockReason, previewWhatsAppReminders, sendWhatsAppReminders, summarizeReminderResult } from './utils/whatsappReminders';
 import {
@@ -176,14 +177,16 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
   const refreshAttendanceViewsRef = useRef(() => Promise.resolve());
   const loadOverviewBundleRef = useRef(() => Promise.resolve());
 
-  const [overview, setOverview] = useState({
+  const [attendanceSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({ page: 'attendance', currentUser, branchScopeValue })));
+  const hasLoadedAttendanceRef = useRef(Boolean(attendanceSeed));
+  const [overview, setOverview] = useState(() => attendanceSeed?.overview || {
     today_checkins: 0,
     yesterday_checkins: 0,
     active_members_today: 0,
     peak_hour_today: null,
     peak_hour_count: 0,
   });
-  const [modeSettings, setModeSettings] = useState({
+  const [modeSettings, setModeSettings] = useState(() => attendanceSeed?.modeSettings || {
     attendance_mode: DEFAULT_ATTENDANCE_MODE,
     attendance_geo_enabled: false,
     gym_latitude: '',
@@ -192,7 +195,7 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
     allow_expired_checkin: false,
   });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !attendanceSeed);
   const [busyCheckin, setBusyCheckin] = useState(false);
   const [busySaveMode, setBusySaveMode] = useState(false);
   const [busyGeoSync, setBusyGeoSync] = useState(false);
@@ -204,23 +207,23 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
   const checkinMethod = 'STAFF';
   const [checkinNote, setCheckinNote] = useState('');
 
-  const [feed, setFeed] = useState([]);
-  const [records, setRecords] = useState([]);
-  const [recordsPagination, setRecordsPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
+  const [feed, setFeed] = useState(() => attendanceSeed?.feed || []);
+  const [records, setRecords] = useState(() => attendanceSeed?.records || []);
+  const [recordsPagination, setRecordsPagination] = useState(() => attendanceSeed?.recordsPagination || { page: 1, limit: 50, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
   const [feedView, setFeedView] = useState('live');
   const [range, setRange] = useState('today');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  const [heatmap, setHeatmap] = useState([]);
-  const [peakHours, setPeakHours] = useState([]);
+  const [heatmap, setHeatmap] = useState(() => attendanceSeed?.heatmap || []);
+  const [peakHours, setPeakHours] = useState(() => attendanceSeed?.peakHours || []);
   const [peakHoursDays, setPeakHoursDays] = useState('7');
   const peakHoursDaysRef = useRef('7');
   useEffect(() => { peakHoursDaysRef.current = peakHoursDays; }, [peakHoursDays]);
   const [inactiveDays, setInactiveDays] = useState(7);
   const [inactiveMembers, setInactiveMembers] = useState([]);
   const [remindedMemberIds, setRemindedMemberIds] = useState(new Set());
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [leaderboard, setLeaderboard] = useState(() => attendanceSeed?.leaderboard || []);
   const [reminderLoadingId, setReminderLoadingId] = useState(null);
 
   const [warningState, setWarningState] = useState(null);
@@ -709,9 +712,10 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
 
   const loadAll = useCallback(async () => {
     if (!token) return;
-    setLoading(true);
+    if (!hasLoadedAttendanceRef.current) setLoading(true);
     try {
       await Promise.all([loadOverviewBundle(), loadPeakHours(peakHoursDaysRef.current), loadRecords(), loadLeaderboard()]);
+      hasLoadedAttendanceRef.current = true;
     } catch (_err) {
       toast?.('Failed to load attendance dashboard.', 'error');
     } finally {
@@ -722,6 +726,17 @@ function AttendancePage({ appRuntime, isActive = true, onOpenRfidSetup, focusSec
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (loading || range !== 'today' || recordsPagination.page !== 1) return;
+    writePageStateSnapshot(
+      buildPageStateKey({ page: 'attendance', currentUser, branchScopeValue }),
+      { overview, modeSettings, feed, records, recordsPagination, heatmap, peakHours, leaderboard },
+    );
+  }, [
+    loading, range, currentUser, branchScopeValue,
+    overview, modeSettings, feed, records, recordsPagination, heatmap, peakHours, leaderboard,
+  ]);
 
   useEffect(() => {
     if (!token) return;

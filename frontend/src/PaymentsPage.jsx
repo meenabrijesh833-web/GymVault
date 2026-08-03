@@ -16,6 +16,7 @@ import { buildReminderPreviewDialog, getReminderPreviewBlockReason, previewWhats
 import PaginationControls from './components/PaginationControls';
 import { getBranchLabel, getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
 import { getPaymentsEntryData, getPaymentsFinanceOverviewData, getPaymentsLedgerData } from './utils/pageDataPrefetch';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from './utils/pageStateCache';
 
 const extractArray = (value, keys = []) => {
   if (Array.isArray(value)) return value;
@@ -224,11 +225,16 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
   const branchParams = useMemo(() => (branchScopeValue ? { branch_id: branchScopeValue } : {}), [branchScopeValue]);
   const showBranchMeta = branchDirectory.length > 1;
   const getRecordBranchLabel = useCallback((record) => getBranchLabel(branchDirectory, record?.branch_id || branchScopeValue || defaultBranchId, { allLabel: 'Main Branch' }), [branchDirectory, branchScopeValue, defaultBranchId]);
-  const [payments, setPayments] = useState([]);
-  const [ledgerPayments, setLedgerPayments] = useState([]);
-  const [ledgerPagination, setLedgerPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
-  const [stats, setStats] = useState({ total_revenue: 0, today_revenue: 0, pending_dues: 0 });
-  const [loading, setLoading] = useState(true);
+  const [paymentsSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({ page: 'payments', currentUser, branchScopeValue })));
+  const [ledgerSeed] = useState(() => readPageStateSnapshot(buildPageStateKey({
+    page: 'payments-ledger', currentUser, branchScopeValue, signature: `${defaultFilter || 'All'}::1:20`,
+  })));
+  const hasLoadedPaymentsRef = useRef(Boolean(paymentsSeed));
+  const [payments, setPayments] = useState(() => paymentsSeed?.payments || []);
+  const [ledgerPayments, setLedgerPayments] = useState(() => ledgerSeed?.ledgerPayments || []);
+  const [ledgerPagination, setLedgerPagination] = useState(() => ledgerSeed?.ledgerPagination || { page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
+  const [stats, setStats] = useState(() => paymentsSeed?.stats || { total_revenue: 0, today_revenue: 0, pending_dues: 0 });
+  const [loading, setLoading] = useState(() => !paymentsSeed);
   const [dateRange, setDateRange] = useState('30d');
   const [customDateRange, setCustomDateRange] = useState(() => {
     const today = getTodayInputValue();
@@ -1224,6 +1230,15 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
         ...prev,
         ...(res.data?.pagination || {}),
       }));
+      writePageStateSnapshot(
+        buildPageStateKey({
+          page: 'payments-ledger',
+          currentUser,
+          branchScopeValue,
+          signature: `${activeFilter}:${normalizedSearchTerm || ''}:${ledgerPagination.page}:${ledgerPagination.limit}`,
+        }),
+        { ledgerPayments: ledgerData, ledgerPagination: { page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, hasPrev: false, ...(res.data?.pagination || {}) } },
+      );
     } catch (err) {
       if (requestId !== ledgerRequestIdRef.current) {
         return;
@@ -1236,7 +1251,7 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
 
   const fetchData = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasLoadedPaymentsRef.current) setLoading(true);
       const [paymentsRes, statsRes, membersRes, plansRes] = await getPaymentsEntryData({
         token,
         currentUser,
@@ -1252,11 +1267,17 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
       const membersData = extractArray(membersRes.data, ['members', 'rows', 'items']);
       const plansData = extractArray(plansRes.data, ['plans', 'rows', 'items']);
 
+      const nextStats = extractObject(statsRes.data, { total_revenue: 0, today_revenue: 0, pending_dues: 0 });
       setPayments(paymentsData);
-      setStats(extractObject(statsRes.data, { total_revenue: 0, today_revenue: 0, pending_dues: 0 }));
+      setStats(nextStats);
       setMembers(membersData);
       setPlans(plansData);
+      hasLoadedPaymentsRef.current = true;
       setLoading(false);
+      writePageStateSnapshot(
+        buildPageStateKey({ page: 'payments', currentUser, branchScopeValue }),
+        { payments: paymentsData, stats: nextStats },
+      );
     } catch (err) {
       reportClientError('Payments load data', err);
       setLoading(false);
