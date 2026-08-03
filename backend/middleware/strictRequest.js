@@ -24,7 +24,7 @@ const INTEGER_QUERY_FIELDS = /(^id$|_id$|^page$|^limit$|^days$|^authuser$)/i;
 const BOOLEAN_QUERY_FIELDS = /^(compact|include_|paginate|refresh|today)/i;
 const DATE_QUERY_FIELDS = /^(from|to|dateFrom|dateTo)$/;
 const PROVIDER_QUERY_FIELDS = {
-    '/google/callback': ['authuser', 'code', 'error', 'error_description', 'error_uri', 'iss', 'prompt', 'scope', 'state'],
+    '/google/callback': ['authuser', 'code', 'error', 'error_description', 'error_uri', 'hd', 'iss', 'prompt', 'scope', 'state'],
     '/razorpay-connect-callback': ['code', 'error', 'error_description', 'state'],
     '/platform/whatsapp-delivery/webhook': ['token'],
 };
@@ -45,6 +45,7 @@ const ROUTE_QUERY_SCHEMAS = {
             prompt: { type: 'string', maxLength: 120 },
             scope: { type: 'string', maxLength: 4096 },
             authuser: { type: 'integer', min: 0 },
+            hd: { type: 'string', maxLength: 253 },
         },
     },
     'GET /api/payments/': {
