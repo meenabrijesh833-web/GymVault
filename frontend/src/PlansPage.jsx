@@ -221,8 +221,9 @@ const PlansPage = ({ appRuntime }) => {
       return;
     }
 
+    const { id: _omitPlanId, ...planFields } = formData;
     const payload = {
-      ...formData,
+      ...planFields,
       name: trimmedName,
       discount_valid_until: formData.discount_valid_until || null,
       features: Array.isArray(formData.features)

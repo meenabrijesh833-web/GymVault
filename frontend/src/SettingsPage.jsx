@@ -1844,7 +1844,6 @@ const loadRazorpayScript = () => {
         connect_mode: String(integrationData.member_payments?.connect_mode || 'MANUAL').toUpperCase(),
         razorpay_key_id: String(integrationData.member_payments?.razorpay_key_id || '').trim(),
         razorpay_key_secret: String(integrationData.member_payments?.razorpay_key_secret || '').trim(),
-        has_razorpay_secret: Boolean(integrationData.member_payments?.has_razorpay_secret),
         upi_id: String(integrationData.member_payments?.upi_id || '').trim(),
       };
     }
