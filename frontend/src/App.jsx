@@ -14,6 +14,7 @@ import { DEFAULT_BRANCH_ID, getBranchLabel, getBranchRequestValue, getDefaultBra
 import { reportClientError } from './utils/clientErrorReporter';
 import { lazyWithRecovery } from './utils/lazyWithRecovery';
 import { invalidateIntentData } from './utils/intentDataCache';
+import { clearPageStateSnapshots } from './utils/pageStateCache';
 import { prefetchMembersEntryData } from './utils/memberDataPrefetch';
 import { canPrefetchPageData, prefetchPageEntryData } from './utils/pageDataPrefetch';
 import {
@@ -704,6 +705,7 @@ function App() {
     writeStoredUser(null);
     writePendingOauthBootstrapToken('');
     localStorage.removeItem('gv_saas_grace_dismissed');
+    clearPageStateSnapshots();
     try {
       window.sessionStorage.removeItem(OPERATIONS_BRANCH_STORAGE_KEY);
     } catch {

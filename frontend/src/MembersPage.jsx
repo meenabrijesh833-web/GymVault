@@ -16,6 +16,10 @@ import { reportClientError } from './utils/clientErrorReporter';
 import PaginationControls from './components/PaginationControls';
 import { getBranchLabel, getBranchRequestValue, getDefaultBranchId, normalizeBranchDirectory } from './utils/branchScope';
 import { getMembersListData, getMembersSummaryData } from './utils/memberDataPrefetch';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from './utils/pageStateCache';
+
+const EMPTY_MEMBER_SUMMARY = { total: 0, active: 0, inactive: 0, expiring_soon: 0, expired: 0, unpaid: 0, frozen: 0 };
+const DEFAULT_MEMBERS_PAGINATION = { page: 1, limit: 30, total: 0, totalPages: 1, hasNext: false, hasPrev: false };
 
 const AVATAR_GRADIENTS = [
   'from-violet-500 to-purple-600',
@@ -424,7 +428,16 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
   const showBranchMeta = branchDirectory.length > 1;
   const getDefaultMemberBranchId = useCallback(() => branchScopeValue || currentUser?.branch_id || defaultBranchId, [branchScopeValue, currentUser?.branch_id, defaultBranchId]);
   const getMemberBranchLabel = useCallback((member) => getBranchLabel(branchDirectory, member?.branch_id || getDefaultMemberBranchId(), { allLabel: 'Main Branch' }), [branchDirectory, getDefaultMemberBranchId]);
-  const [members, setMembers] = useState([]);
+  const [membersSeed] = useState(() => ({
+    list: readPageStateSnapshot(buildPageStateKey({
+      page: 'members',
+      currentUser,
+      branchScopeValue,
+      signature: `${FILTER_TO_API_STATUS[defaultFilter] || 'ALL'}::1:30`,
+    })),
+    summary: readPageStateSnapshot(buildPageStateKey({ page: 'members-summary', currentUser, branchScopeValue })),
+  }));
+  const [members, setMembers] = useState(() => membersSeed.list?.members || []);
   const [plans, setPlans] = useState([]);
   const [filter, setFilter] = useState(defaultFilter);
   const [searchTerm, setSearchTerm] = useState('');
@@ -433,10 +446,10 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !membersSeed.list);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [memberSummary, setMemberSummary] = useState({ total: 0, active: 0, inactive: 0, expiring_soon: 0, expired: 0, unpaid: 0, frozen: 0 });
-  const [membersPagination, setMembersPagination] = useState({ page: 1, limit: 30, total: 0, totalPages: 1, hasNext: false, hasPrev: false });
+  const [memberSummary, setMemberSummary] = useState(() => membersSeed.summary?.summary || EMPTY_MEMBER_SUMMARY);
+  const [membersPagination, setMembersPagination] = useState(() => membersSeed.list?.pagination || DEFAULT_MEMBERS_PAGINATION);
 
   const [selectedIds, setSelectedIds] = useState([]);
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -544,8 +557,8 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
   const checkActivationRazorpayStatusRef = useRef(null);
   const selectedMemberRef = useRef(selectedMember);
   const showDetailsModalRef = useRef(showDetailsModal);
-  const hasLoadedMembersRef = useRef(false);
-  const hasLoadedMemberSummaryRef = useRef(false);
+  const hasLoadedMembersRef = useRef(Boolean(membersSeed.list));
+  const hasLoadedMemberSummaryRef = useRef(Boolean(membersSeed.summary));
   const membersRequestIdRef = useRef(0);
   const memberSummaryRequestIdRef = useRef(0);
   const resumeRefreshAtRef = useRef(0);
@@ -1217,11 +1230,21 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
 
       const normalizedMembers = extractArray(res.data, ['members', 'rows', 'items']).map(normalizeMemberRecord);
       hasLoadedMembersRef.current = true;
+      const nextPagination = { ...DEFAULT_MEMBERS_PAGINATION, ...(res.data?.pagination || {}) };
       setMembers(normalizedMembers);
       setMembersPagination((prev) => ({
         ...prev,
         ...(res.data?.pagination || {}),
       }));
+      writePageStateSnapshot(
+        buildPageStateKey({
+          page: 'members',
+          currentUser,
+          branchScopeValue,
+          signature: `${FILTER_TO_API_STATUS[filter] || 'ALL'}:${debouncedSearch}:${membersPagination.page}:${membersPagination.limit}`,
+        }),
+        { members: normalizedMembers, pagination: nextPagination },
+      );
       // Sync selectedMember so photo & data stay fresh after any upload/edit
       setSelectedMember(prev => {
         if (!prev) return prev;
@@ -1258,7 +1281,7 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
       if (requestId !== memberSummaryRequestIdRef.current) {
         return;
       }
-      setMemberSummary({
+      const nextSummary = {
         total: Number(res.data?.total || 0),
         active: Number(res.data?.active || 0),
         inactive: Number(res.data?.inactive || 0),
@@ -1266,8 +1289,13 @@ const MembersPage = ({ appRuntime, defaultFilter = 'All', focusMemberId = null, 
         expired: Number(res.data?.expired || 0),
         unpaid: Number(res.data?.unpaid || 0),
         frozen: Number(res.data?.frozen || 0),
-      });
+      };
+      setMemberSummary(nextSummary);
       hasLoadedMemberSummaryRef.current = true;
+      writePageStateSnapshot(
+        buildPageStateKey({ page: 'members-summary', currentUser, branchScopeValue }),
+        { summary: nextSummary },
+      );
     } catch (err) {
       reportClientError('Members fetch summary', err);
     }

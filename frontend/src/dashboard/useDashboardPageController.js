@@ -4,6 +4,7 @@ import { copyCollectionText, describeCollectionLinkDelivery } from '../utils/mem
 import { normalizeProfileImageUrl } from '../utils/profileImage';
 import { reportClientError } from '../utils/clientErrorReporter';
 import { getDashboardEntryData } from '../utils/pageDataPrefetch';
+import { buildPageStateKey, readPageStateSnapshot, writePageStateSnapshot } from '../utils/pageStateCache';
 import {
   formatHour,
   isValidPhoneInput,
@@ -88,19 +89,23 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
   const { token, toast, navigateTo: navTo, branchScopeValue, currentUser } = appRuntime;
   const navigateTo = useMemo(() => navTo || ((...args) => setCurrentPage?.(...args)), [navTo, setCurrentPage]);
 
-  const [members, setMembers] = useState([]);
-  const [plans, setPlans] = useState([]);
-  const [payStats, setPayStats] = useState({ total_revenue: 0, today_revenue: 0, pending_dues: 0 });
-  const [chart30, setChart30] = useState([]);
-  const [chart7, setChart7] = useState([]);
-  const [attendanceHeatmap, setAttendanceHeatmap] = useState([]);
-  const [todayCheckins, setTodayCheckins] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [dashboardSeed] = useState(() => readPageStateSnapshot(
+    buildPageStateKey({ page: 'dashboard', currentUser, branchScopeValue }),
+  ));
+
+  const [members, setMembers] = useState(() => dashboardSeed?.members || []);
+  const [plans, setPlans] = useState(() => dashboardSeed?.plans || []);
+  const [payStats, setPayStats] = useState(() => dashboardSeed?.payStats || { total_revenue: 0, today_revenue: 0, pending_dues: 0 });
+  const [chart30, setChart30] = useState(() => dashboardSeed?.chart30 || []);
+  const [chart7, setChart7] = useState(() => dashboardSeed?.chart7 || []);
+  const [attendanceHeatmap, setAttendanceHeatmap] = useState(() => dashboardSeed?.attendanceHeatmap || []);
+  const [todayCheckins, setTodayCheckins] = useState(() => dashboardSeed?.todayCheckins || 0);
+  const [loading, setLoading] = useState(() => !dashboardSeed);
   const [fetchError, setFetchError] = useState(null);
   const [chartDays, setChartDays] = useState(7);
   const [isAutomating, setIsAutomating] = useState(false);
 
-  const [setup, setSetup] = useState({
+  const [setup, setSetup] = useState(() => dashboardSeed?.setup || {
     progress: 0,
     is_complete: false,
     steps: { profile: false, plans: false, members: false },
@@ -116,7 +121,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
   const [showCheckinModal, setShowCheckinModal] = useState(false);
   const [checkinQuery, setCheckinQuery] = useState('');
   const [checkinBusyMemberIds, setCheckinBusyMemberIds] = useState(() => new Set());
-  const [todayAttendance, setTodayAttendance] = useState([]);
+  const [todayAttendance, setTodayAttendance] = useState(() => dashboardSeed?.todayAttendance || []);
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [quickActionLoading, setQuickActionLoading] = useState('');
   const quickActionTimerRef = useRef(null);
@@ -152,16 +157,16 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
   const [broadcastTemplates, setBroadcastTemplates] = useState([]);
   const [broadcastComposerLoaded, setBroadcastComposerLoaded] = useState(false);
   const [broadcastActionMeta, setBroadcastActionMeta] = useState(null);
-  const [gymName, setGymName] = useState('');
-  const [gymBilling, setGymBilling] = useState({
+  const [gymName, setGymName] = useState(() => dashboardSeed?.gymName || '');
+  const [gymBilling, setGymBilling] = useState(() => dashboardSeed?.gymBilling || {
     saas_status: 'FREE_TRIAL',
     saas_valid_until: '',
     current_plan: 'pro',
     saas_billing_cycle: 'monthly',
   });
-  const [churnInsights, setChurnInsights] = useState({ summary: { high: 0, medium: 0, low: 0 }, members: [] });
-  const [campaignLogs, setCampaignLogs] = useState([]);
-  const [leadSummary, setLeadSummary] = useState({
+  const [churnInsights, setChurnInsights] = useState(() => dashboardSeed?.churnInsights || { summary: { high: 0, medium: 0, low: 0 }, members: [] });
+  const [campaignLogs, setCampaignLogs] = useState(() => dashboardSeed?.campaignLogs || []);
+  const [leadSummary, setLeadSummary] = useState(() => dashboardSeed?.leadSummary || {
     total: 0,
     open_leads: 0,
     new_leads: 0,
@@ -193,6 +198,23 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
   useEffect(() => {
     isDashboardActiveRef.current = Boolean(isActive);
   }, [isActive]);
+
+  useEffect(() => {
+    if (loading || fetchError) return;
+    writePageStateSnapshot(
+      buildPageStateKey({ page: 'dashboard', currentUser, branchScopeValue }),
+      {
+        members, plans, payStats, chart30, chart7, attendanceHeatmap,
+        todayAttendance, todayCheckins, setup, gymName, gymBilling,
+        churnInsights, campaignLogs, leadSummary,
+      },
+    );
+  }, [
+    loading, fetchError, branchScopeValue, currentUser,
+    members, plans, payStats, chart30, chart7, attendanceHeatmap,
+    todayAttendance, todayCheckins, setup, gymName, gymBilling,
+    churnInsights, campaignLogs, leadSummary,
+  ]);
 
   useEffect(() => {
     if (!showBroadcastModal) {
