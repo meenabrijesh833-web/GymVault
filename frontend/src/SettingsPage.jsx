@@ -2280,6 +2280,7 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
       try {
           const res = await axios.post('/api/billing/reset-test', {}, headers);
           setGymData(prev => ({ ...prev, saas_valid_until: res.data.saas_valid_until }));
+          window.dispatchEvent(new CustomEvent('gymvault:subscription-renewed'));
           toast('Test timer reset — expires in 1 day.', 'success');
       } catch (err) {
           toast(err?.response?.data?.error || 'Failed to reset test timer.', 'error');
@@ -2608,11 +2609,13 @@ td{font-size:11.5px;padding:10px 8px;border:1px solid #bbb;text-align:center;fon
 
                       applyEffectiveLimitsPayload(verifyRes.data?.effective_limits || order?.effective_limits);
                       await fetchSettings();
+                      window.dispatchEvent(new CustomEvent('gymvault:subscription-renewed'));
 
                   } catch (err) {
                       reportClientError('Settings billing sync', err);
                       toast(err?.response?.data?.error || 'Payment received. System is syncing...', 'warning');
                       await fetchSettings();
+                      window.dispatchEvent(new CustomEvent('gymvault:subscription-renewed'));
                   } finally {
                         razorpayReturnPendingRef.current = false;
                         normalizeAfterExternalCheckoutReturn();

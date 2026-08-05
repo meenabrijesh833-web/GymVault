@@ -175,12 +175,25 @@ const getClientIp = (req) => {
     return normalizeIp(req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '');
 };
 
+const isValidIpEntry = (value) => {
+    const v = String(value || '').trim();
+    if (!v) return false;
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(v)) return v.split('.').every((octet) => Number(octet) <= 255);
+    return v.includes(':') && /^[0-9a-fA-F:]+$/.test(v);
+};
+
 const isIpAllowed = (req) => {
-    const allowList = String(process.env.SUPERADMIN_ALLOWED_IPS || '')
+    const rawEntries = String(process.env.SUPERADMIN_ALLOWED_IPS || '')
         .split(',')
         .map((v) => normalizeIp(v))
         .filter(Boolean);
+    const allowList = rawEntries.filter(isValidIpEntry);
 
+    if (rawEntries.length > allowList.length) {
+        console.warn(`[superadmin] SUPERADMIN_ALLOWED_IPS contains ${rawEntries.length - allowList.length} non-IP value(s) that were ignored. Use comma-separated IP addresses, or leave it blank to allow all.`);
+    }
+
+    // No valid IP restriction configured — fall back to password-only protection.
     if (allowList.length === 0) return true;
 
     const clientIp = getClientIp(req);

@@ -451,6 +451,7 @@ function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(!isHQ);
   const [authUiErrorCode, setAuthUiErrorCode] = useState('');
   const [isSuspended, setIsSuspended] = useState(false); 
+  const [renewMode, setRenewMode] = useState(false);
   const [saasGrace, setSaasGrace] = useState(false);
   const [saasGraceNoticeKey, setSaasGraceNoticeKey] = useState('');
   const [settingsTab, setSettingsTab] = useState('account'); 
@@ -715,6 +716,7 @@ function App() {
     setToken(null);
     setCurrentUser(null);
     setIsSuspended(false);
+    setRenewMode(false);
     setSaasGrace(false);
     setSaasGraceNoticeKey('');
     setAuthUiErrorCode('');
@@ -1211,7 +1213,7 @@ function App() {
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response && error.response.data.error === "SAAS_EXPIRED") {
+        if (error.response?.data?.error === "SAAS_EXPIRED") {
           setIsSuspended(true); 
           setCurrentPage('Settings'); 
           return new Promise(() => {}); 
@@ -1221,6 +1223,44 @@ function App() {
     );
     return () => axios.interceptors.response.eject(interceptor);
   }, []);
+
+  // Re-check subscription after a renewal so the lock lifts automatically.
+  const recheckSubscription = useCallback(async () => {
+    if (!token || isHQ) return;
+    try {
+      const res = await axios.get('/api/auth/me', { headers: { 'x-auth-token': token }, timeout: 8000 });
+      if (res.data?.user) {
+        writeStoredUser(res.data.user);
+        setCurrentUser(res.data.user);
+      }
+      const saas = res.data?.saas;
+      if (saas && saas.status !== 'EXPIRED') {
+        setIsSuspended(false);
+        setRenewMode(false);
+        if (saas.status === 'GRACE_PERIOD') {
+          const graceKey = `GRACE_PERIOD:${saas.valid_until || ''}`;
+          setSaasGraceNoticeKey(graceKey);
+          setSaasGrace(localStorage.getItem('gv_saas_grace_dismissed') !== graceKey);
+        } else {
+          setSaasGrace(false);
+          setSaasGraceNoticeKey('');
+        }
+      }
+    } catch (_err) {
+      // Ignore; the periodic checks will reconcile status.
+    }
+  }, [token, isHQ]);
+
+  useEffect(() => {
+    const handleRenewed = () => { recheckSubscription(); };
+    window.addEventListener('gymvault:subscription-renewed', handleRenewed);
+    return () => window.removeEventListener('gymvault:subscription-renewed', handleRenewed);
+  }, [recheckSubscription]);
+
+  useEffect(() => {
+    if (!isSuspended && renewMode) setRenewMode(false);
+  }, [isSuspended, renewMode]);
+
 
   // 🚨 NAVIGATION
   const handleSidebarNav = useCallback((page) => {
@@ -1579,7 +1619,14 @@ function App() {
 
   return (
     <>
-      {isSuspended && <SuspensionOverlay onLogout={handleLogout} onRenew={() => { setIsSuspended(false); setCurrentPage('Settings'); setSettingsTab('billing'); }} />}
+      {isSuspended && !renewMode && <SuspensionOverlay onLogout={handleLogout} onRenew={() => { setRenewMode(true); setCurrentPage('Settings'); setSettingsTab('billing'); }} />}
+      {isSuspended && renewMode && (
+        <div className="fixed top-0 left-0 right-0 z-[9980] bg-gradient-to-r from-rose-600 to-rose-500 text-white px-4 py-2.5 text-center shadow-lg" style={{ paddingTop: 'calc(var(--safe-area-top) + 0.625rem)' }}>
+          <div className="relative mx-auto max-w-[1400px] px-8">
+            <p className="text-xs font-bold">Your subscription has expired. Complete renewal below to unlock the app. <button onClick={() => setRenewMode(false)} className="underline font-extrabold ml-1 hover:text-white/80">Back to lock screen</button></p>
+          </div>
+        </div>
+      )}
       {saasGrace && !isSuspended && (
         <div className="fixed top-0 left-0 right-0 z-[9980] bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2.5 text-center shadow-lg" style={{ paddingTop: 'calc(var(--safe-area-top) + 0.625rem)' }}>
           <div className="relative mx-auto max-w-[1400px] px-8">
