@@ -123,7 +123,7 @@ export const getPaymentsEntryData = ({
     ['payments-compact', '/api/payments', { ...dateParams, compact: true, ...branchParams }],
     ['payment-stats', '/api/payments/stats', { ...dateParams, ...branchParams }],
     ['member-options', '/api/members/options', { limit: 20, ...branchParams }],
-    ['plans', '/api/plans', {}],
+    ['plans', '/api/memberships/plans', branchParams],
   ];
 
   return Promise.all(requests.map(([kind, url, params]) => getPageRequest({

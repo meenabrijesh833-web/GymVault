@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { pool, adminPool } = require('../config/db');
 const auth = require('../middleware/authMiddleware');
 const saasMiddleware = require('../middleware/saasMiddleware');
-const { requireOwner } = require('../middleware/rbac');
+const { requireOwner, requirePermission } = require('../middleware/rbac');
 const { strictBody } = require('../middleware/strictRequest');
 const { decryptSecret } = require('../utils/secretCrypto');
 const { recordRuntimeEvent } = require('../utils/runtimeTelemetry');
@@ -93,7 +93,7 @@ const dueVerificationBody = strictBody([
 });
 const emptyPaymentBody = strictBody([], { allowEmpty: true });
 
-router.use(auth, saasMiddleware, requireOwner);
+router.use(auth, saasMiddleware);
 router.use(branchSchemaMiddleware);
 
 const DUE_ZERO_THRESHOLD = 0.009;
@@ -1213,7 +1213,7 @@ const applyDueCollection = async ({ gymId, paymentId, amount, paymentMode, trans
     }
 };
 
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('payments:read'), async (req, res) => {
     try {
         await ensurePaymentCollectionsSchema();
         const { branchId } = await resolveBranchReadScope(pool, req);
@@ -1367,7 +1367,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.get('/renewal-context/:member_id', async (req, res) => {
+router.get('/renewal-context/:member_id', requirePermission('payments:read'), async (req, res) => {
     try {
         const memberId = ensureInteger(req.params?.member_id, { field: 'member_id', required: true, min: 1 });
         const planId = ensureInteger(req.query?.plan_id, { field: 'plan_id', required: true, min: 1 });
@@ -1392,7 +1392,7 @@ router.get('/renewal-context/:member_id', async (req, res) => {
     }
 });
 
-router.post('/record', paymentRecordBody, async (req, res) => {
+router.post('/record', requirePermission('payments:write'), paymentRecordBody, async (req, res) => {
     let client;
 
     try {
@@ -1565,7 +1565,7 @@ router.post('/record', paymentRecordBody, async (req, res) => {
     }
 });
 
-router.get('/stats', async (req, res) => {
+router.get('/stats', requirePermission('payments:read'), async (req, res) => {
     try {
         await ensurePaymentCollectionsSchema();
         const { branchId } = await resolveBranchReadScope(pool, req);
@@ -1643,7 +1643,7 @@ router.get('/stats', async (req, res) => {
     }
 });
 
-router.get('/chart', async (req, res) => {
+router.get('/chart', requirePermission('payments:read'), async (req, res) => {
     try {
         await ensurePaymentCollectionsSchema();
         const { branchId } = await resolveBranchReadScope(pool, req);
@@ -1711,7 +1711,7 @@ router.get('/chart', async (req, res) => {
     }
 });
 
-router.get('/history/:member_id', async (req, res) => {
+router.get('/history/:member_id', requirePermission('payments:read'), async (req, res) => {
     try {
         await ensurePaymentCollectionsSchema();
         const { member_id } = req.params;
@@ -1786,7 +1786,7 @@ router.get('/history/:member_id', async (req, res) => {
     }
 });
 
-router.post('/:id/due/create-order', dueOrderBody, async (req, res) => {
+router.post('/:id/due/create-order', requirePermission('payments:write'), dueOrderBody, async (req, res) => {
     try {
         const paymentId = ensureInteger(req.params.id, { field: 'payment id', required: true, min: 1 });
         const gym_id = req.user.gym_id;
@@ -1880,7 +1880,7 @@ router.post('/:id/due/create-order', dueOrderBody, async (req, res) => {
     }
 });
 
-router.post('/:id/due/payment-link-status', duePaymentLinkStatusBody, async (req, res) => {
+router.post('/:id/due/payment-link-status', requirePermission('payments:write'), duePaymentLinkStatusBody, async (req, res) => {
     try {
         const paymentId = ensureInteger(req.params.id, { field: 'payment id', required: true, min: 1 });
         const gym_id = req.user.gym_id;
@@ -2021,7 +2021,7 @@ router.post('/:id/due/payment-link-status', duePaymentLinkStatusBody, async (req
     }
 });
 
-router.post('/:id/due/collect', dueCollectionBody, async (req, res) => {
+router.post('/:id/due/collect', requirePermission('payments:write'), dueCollectionBody, async (req, res) => {
     try {
         const paymentId = ensureInteger(req.params.id, { field: 'payment id', required: true, min: 1 });
         const gym_id = req.user.gym_id;
@@ -2054,7 +2054,7 @@ router.post('/:id/due/collect', dueCollectionBody, async (req, res) => {
     }
 });
 
-router.post('/:id/due/verify', dueVerificationBody, async (req, res) => {
+router.post('/:id/due/verify', requirePermission('payments:write'), dueVerificationBody, async (req, res) => {
     try {
         const paymentId = ensureInteger(req.params.id, { field: 'payment id', required: true, min: 1 });
         const gym_id = req.user.gym_id;
@@ -2130,7 +2130,7 @@ router.post('/:id/due/verify', dueVerificationBody, async (req, res) => {
     }
 });
 
-router.delete('/:id', emptyPaymentBody, async (req, res) => {
+router.delete('/:id', requireOwner, emptyPaymentBody, async (req, res) => {
     let client;
     try {
         const id = ensureInteger(req.params.id, { field: 'payment id', required: true, min: 1 });

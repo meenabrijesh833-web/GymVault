@@ -602,7 +602,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
 
     const formData = new FormData();
     formData.append('full_name', addFormData.full_name);
-    formData.append('email', addFormData.email);
+    formData.append('email', String(addFormData.email || '').trim());
     formData.append('phone', normalizedPhone);
     if (addFile) {
       formData.append('profile_pic', addFile);
@@ -628,7 +628,7 @@ export default function useDashboardPageController({ appRuntime, setCurrentPage,
       toast('Member added successfully!', 'success');
       fetchData();
 
-      if (addSelectedPlanId && newMember) {
+      if (addSelectedPlanId && newMember?.id) {
         setSelectedMemberForPay(newMember.id);
         setSelectedPlanForPay(addSelectedPlanId);
         setShowPaymentModal(true);

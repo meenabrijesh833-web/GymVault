@@ -567,7 +567,10 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
     if (!canAccessPos && financeTab === 'pos') {
       setFinanceTab('collections');
     }
-  }, [canAccessPos, financeTab]);
+    if (!isOwner && financeTab === 'payroll') {
+      setFinanceTab('collections');
+    }
+  }, [canAccessPos, isOwner, financeTab]);
 
   const payrollDestinationByUserId = useMemo(() => {
     const nextMap = new Map();
@@ -1962,7 +1965,7 @@ const PaymentsPage = ({ appRuntime, defaultFilter = 'All', focusPaymentId = null
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end">
           <div className="flex gap-1 bg-slate-100 rounded-xl p-0.5 w-fit overflow-x-auto whitespace-nowrap">
             {[{ key: 'collections', label: 'Collections' }, { key: 'expenses', label: 'Expenses' }, { key: 'payroll', label: 'Payroll' }, { key: 'pos', label: 'POS' }]
-              .filter((tab) => tab.key !== 'pos' || canAccessPos)
+              .filter((tab) => (tab.key === 'pos' ? canAccessPos : (tab.key === 'payroll' ? isOwner : true)))
               .map(t => (
               <button key={t.key} onClick={() => setFinanceTab(t.key)} className={`gv-type-control px-3 py-1.5 rounded-lg transition-all ${financeTab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t.label}</button>
             ))}
